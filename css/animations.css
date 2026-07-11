@@ -1,0 +1,51 @@
+/* ==========================================================================
+   animations.css — transitions and micro-animations
+   Heavier weather effects (rain/snow/clouds particles) are drawn on
+   #bg-canvas by js/ui.js for performance; this file covers UI-level motion.
+   ========================================================================== */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-card, .runner-card, .section-block {
+  animation: fadeUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.runner-card { animation-delay: 0.05s; }
+
+@keyframes sunSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.hero-icon .weather-icon { animation: iconPop 0.4s ease; }
+@keyframes iconPop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Slow rotation for clear-sky sun icons, respecting reduced-motion (see base.css) */
+.weather-icon.spin-sun circle { transform-origin: 32px 32px; animation: sunSpin 18s linear infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--glass-bg-soft) 25%, var(--glass-border) 37%, var(--glass-bg-soft) 63%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: var(--radius-sm);
+}
+
+.runner-segment { animation: fadeIn 0.5s ease both; }

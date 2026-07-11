@@ -1,0 +1,122 @@
+/* ==========================================================================
+   runner.css — "Для бегуна" section, including the signature 24h comfort
+   timeline: a horizontal ribbon of 24 segments colored by running comfort.
+   ========================================================================== */
+
+.runner-card {
+  padding: 20px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.runner-header { display: flex; justify-content: space-between; align-items: center; }
+.runner-header h2 { font-size: 16px; font-weight: 700; }
+
+.runner-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+#runner-emoji { font-size: 14px; }
+
+.runner-warning {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(255, 145, 66, 0.18), rgba(255, 66, 66, 0.12));
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 145, 66, 0.3);
+}
+
+/* --- Signature element: the hourly comfort ribbon --- */
+.runner-timeline-wrap { display: flex; flex-direction: column; gap: 6px; }
+
+.runner-timeline {
+  display: flex;
+  gap: 2px;
+  height: 46px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.runner-segment {
+  flex: 1;
+  position: relative;
+  border-radius: 3px;
+  transition: transform 0.15s ease;
+}
+.runner-segment.is-now {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -2px;
+  transform: scaleY(1.08);
+  z-index: 2;
+}
+
+.runner-timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+}
+
+/* --- Pace-type suitability grid --- */
+.runner-pace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.pace-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.pace-chip.ok { background: var(--chip-bg); color: var(--accent); }
+.pace-chip .pace-icon { font-size: 16px; }
+
+/* --- Recommendation detail grid (hydration, UV, wind, risk of overheating…) --- */
+.runner-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.runner-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-soft);
+}
+.runner-detail-label { font-size: 11px; color: var(--text-tertiary); font-weight: 600; }
+.runner-detail-value { font-size: 14px; font-weight: 700; }
+
+/* --- Clothing recommendation strip --- */
+.runner-clothing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--hero-gradient);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.runner-clothing .clothing-icon { font-size: 20px; flex-shrink: 0; }

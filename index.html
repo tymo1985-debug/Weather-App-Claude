@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#4C6FFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0E1224" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Погода — приложение уровня Samsung One UI с разделом для бегунов">
+  <title>Погода</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/themes.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/runner.css">
+  <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+  <!-- Animated weather background layer, driven by js/ui.js -->
+  <div id="bg-layer" class="bg-layer" aria-hidden="true">
+    <canvas id="bg-canvas"></canvas>
+  </div>
+
+  <div id="app" class="app">
+
+    <!-- ============================ HEADER ============================ -->
+    <header class="app-header">
+      <button id="menu-btn" class="icon-btn" aria-label="Города">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M4 6h16v2H4zM4 11h16v2H4zM4 16h16v2H4z"/></svg>
+      </button>
+
+      <div class="city-tabs" id="city-tabs" role="tablist" aria-label="Избранные города"></div>
+
+      <button id="search-btn" class="icon-btn" aria-label="Поиск города">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5L20.5 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+      </button>
+      <button id="theme-btn" class="icon-btn" aria-label="Тема">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.4 5.4 0 0 1-7.54-7.54A9 9 0 0 0 12 3z"/></svg>
+      </button>
+    </header>
+
+    <!-- =================== SEARCH OVERLAY (hidden by default) =================== -->
+    <div id="search-overlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <div class="search-row">
+          <input id="search-input" type="text" placeholder="Найти город…" autocomplete="off">
+          <button id="search-close" class="icon-btn" aria-label="Закрыть">✕</button>
+        </div>
+        <button id="use-location-btn" class="location-btn">📍 Использовать моё местоположение</button>
+        <ul id="search-results" class="search-results"></ul>
+      </div>
+    </div>
+
+    <!-- =================== CITY DRAWER (favorites list) =================== -->
+    <div id="drawer-overlay" class="overlay hidden">
+      <div class="overlay-panel drawer-panel">
+        <h2 class="drawer-title">Мои города</h2>
+        <ul id="favorites-list" class="favorites-list"></ul>
+        <button id="drawer-add-btn" class="location-btn">＋ Добавить город</button>
+      </div>
+    </div>
+
+    <!-- ============================ MAIN CONTENT ============================ -->
+    <main id="main-content" class="main-content">
+
+      <!-- Loading / offline banners -->
+      <div id="status-banner" class="status-banner hidden"></div>
+
+      <!-- ---------- HERO: current conditions ---------- -->
+      <section class="hero-card glass" id="hero-card">
+        <div class="hero-top">
+          <div class="hero-place">
+            <span id="hero-city-name">—</span>
+            <span id="hero-updated" class="hero-updated"></span>
+          </div>
+          <div id="hero-icon" class="hero-icon"></div>
+        </div>
+        <div class="hero-temp">
+          <span id="hero-temp-value">--°</span>
+          <div class="hero-temp-meta">
+            <span id="hero-description">—</span>
+            <span id="hero-feels-like">Ощущается как --°</span>
+          </div>
+        </div>
+        <div class="hero-minmax">
+          <span>↓ <span id="hero-temp-min">--°</span></span>
+          <span>↑ <span id="hero-temp-max">--°</span></span>
+        </div>
+      </section>
+
+      <!-- ---------- RUNNER SECTION ---------- -->
+      <section class="runner-card glass" id="runner-card">
+        <div class="runner-header">
+          <h2>Для бегуна</h2>
+          <div class="runner-badge" id="runner-badge">
+            <span id="runner-emoji">🟢</span>
+            <span id="runner-label">Загрузка…</span>
+          </div>
+        </div>
+
+        <div id="runner-warning" class="runner-warning hidden"></div>
+
+        <div class="runner-timeline-wrap">
+          <div class="runner-timeline" id="runner-timeline" role="img" aria-label="Комфортность бега по часам"></div>
+          <div class="runner-timeline-labels" id="runner-timeline-labels"></div>
+        </div>
+
+        <div class="runner-pace-grid" id="runner-pace-grid"></div>
+
+        <div class="runner-details-grid" id="runner-details-grid"></div>
+
+        <div class="runner-clothing" id="runner-clothing"></div>
+      </section>
+
+      <!-- ---------- HOURLY FORECAST ---------- -->
+      <section class="section-block">
+        <h2 class="section-title">Почасовой прогноз</h2>
+        <div class="hourly-scroll glass" id="hourly-scroll"></div>
+      </section>
+
+      <!-- ---------- 10-DAY FORECAST ---------- -->
+      <section class="section-block">
+        <h2 class="section-title">Прогноз на 10 дней</h2>
+        <div class="daily-list glass" id="daily-list"></div>
+      </section>
+
+      <!-- ---------- DETAILS GRID ---------- -->
+      <section class="section-block">
+        <h2 class="section-title">Подробности</h2>
+        <div class="details-grid" id="details-grid"></div>
+      </section>
+
+      <footer class="app-footer">Данные: Open-Meteo · Обновляется автоматически</footer>
+    </main>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
