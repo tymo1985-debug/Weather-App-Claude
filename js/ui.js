@@ -302,7 +302,98 @@ function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/* ============================== BACKGROUND WEATHER ANIMATION ============================== */
+/* ============================== TEMPERATURE CHART ============================== */
+
+/**
+ * Renders a lightweight inline-SVG line chart of temperature and "feels like"
+ * for the next 24 hours. No charting library needed — a hand-rolled polyline
+ * keeps the app dependency-free, per the project's "no heavy frameworks" brief.
+ */
+export function renderTemperatureChart(hourlyRows) {
+  const rows = hourlyRows.slice(0, 24);
+  const container = $('temp-chart');
+  if (!rows.length) { container.innerHTML = ''; return; }
+
+  const width = 320;
+  const height = 140;
+  const padX = 8;
+  const padTop = 22;
+  const padBottom = 24;
+
+  const temps = rows.map((r) => r.temperature_2m);
+  const feels = rows.map((r) => r.apparent_temperature ?? r.temperature_2m);
+  const allValues = temps.concat(feels);
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const span = Math.max(1, max - min);
+
+  const xStep = (width - padX * 2) / (rows.length - 1 || 1);
+  const yFor = (v) => padTop + (height - padTop - padBottom) * (1 - (v - min) / span);
+  const xFor = (i) => padX + i * xStep;
+
+  const linePoints = temps.map((t, i) => `${xFor(i)},${yFor(t)}`).join(' ');
+  const feelsPoints = feels.map((t, i) => `${xFor(i)},${yFor(t)}`).join(' ');
+  const fillPoints = `${xFor(0)},${height - padBottom} ${linePoints} ${xFor(rows.length - 1)},${height - padBottom}`;
+
+  // Label every 4th hour to avoid crowding.
+  const labelIndices = rows.map((_, i) => i).filter((i) => i % 4 === 0);
+  const labels = labelIndices.map((i) => {
+    const label = i === 0 ? 'Сейчас' : new Date(rows[i].time).toLocaleTimeString('ru-RU', { hour: '2-digit' });
+    return `<text class="temp-chart-label" x="${xFor(i)}" y="${height - 6}" text-anchor="middle">${label}</text>`;
+  }).join('');
+
+  // Highlight current temperature value above its point.
+  const peakDots = labelIndices.map((i) => `
+    <circle class="temp-chart-dot" cx="${xFor(i)}" cy="${yFor(temps[i])}" r="2.6"></circle>
+    <text class="temp-chart-value" x="${xFor(i)}" y="${yFor(temps[i]) - 8}" text-anchor="middle">${Math.round(temps[i])}°</text>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="chart-legend">
+      <span><i class="dot actual"></i>Температура</span>
+      <span><i class="dot feels"></i>Ощущается</span>
+    </div>
+    <svg class="temp-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="var(--accent)" stop-opacity="0.5"/>
+          <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon class="temp-chart-fill" points="${fillPoints}" fill="url(#chartFill)"></polygon>
+      <polyline class="temp-chart-line-feels" points="${feelsPoints}"></polyline>
+      <polyline class="temp-chart-line" points="${linePoints}"></polyline>
+      ${peakDots}
+      ${labels}
+    </svg>
+  `;
+}
+
+/* ============================== RUNNER PROFILE CHIPS ============================== */
+
+const TOLERANCE_LABELS = { sensitive: 'чувствителен', average: 'обычная', adapted: 'привык' };
+const TOLERANCE_CYCLE = ['average', 'adapted', 'sensitive'];
+
+/** Reflects the current personalization profile onto the two toggle chips. */
+export function renderProfileChips(profile) {
+  $('heat-profile-value').textContent = TOLERANCE_LABELS[profile.heatTolerance];
+  $('cold-profile-value').textContent = TOLERANCE_LABELS[profile.coldTolerance];
+}
+
+/** Returns the next value in the tolerance cycle, used when a chip is tapped. */
+export function nextTolerance(current) {
+  const idx = TOLERANCE_CYCLE.indexOf(current);
+  return TOLERANCE_CYCLE[(idx + 1) % TOLERANCE_CYCLE.length];
+}
+
+/* ============================== NOTIFICATIONS UI ============================== */
+
+/** Reflects whether notifications are on/off onto the bell button's visual state. */
+export function setNotificationButtonState(enabled) {
+  $('notify-btn').classList.toggle('active', enabled);
+}
+
+
 
 let animationFrameId = null;
 let particles = [];

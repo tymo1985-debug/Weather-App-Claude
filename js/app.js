@@ -29,6 +29,7 @@ async function init() {
 
   const settings = storage.getSettings();
   ui.applyTheme(settings.theme === 'auto' ? 'light' : settings.theme); // provisional, refined after first fetch
+  ui.setNotificationButtonState(settings.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted');
 
   state.favorites = storage.getFavorites();
 
@@ -124,21 +125,27 @@ function renderAll() {
   applyResolvedTheme(dailyToday);
 
   ui.renderHero(state.activeCity, current, dailyToday);
+  ui.renderTemperatureChart(hourly);
   ui.renderHourly(hourly);
   ui.renderDaily(daily);
   ui.renderDetailsGrid(current, dailyToday);
   ui.startWeatherAnimation(current.weather_code);
 
+  const settings = storage.getSettings();
+  const profile = settings.runnerProfile;
+  ui.renderProfileChips(profile);
+
   const currentHourRow = runnerEngine.findCurrentHourRow(hourly);
-  const timeline = runnerEngine.buildComfortTimeline(hourly);
+  const timeline = runnerEngine.buildComfortTimeline(hourly, profile);
   const nowIndex = timeline.findIndex((seg) => seg.time === currentHourRow.time);
   ui.renderRunnerTimeline(timeline, Math.max(0, nowIndex));
 
-  const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday);
+  const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday, profile);
   ui.renderRunnerRecommendations(recommendations);
 
-  const warning = runnerEngine.checkDeteriorationWarning(hourly);
+  const warning = runnerEngine.checkDeteriorationWarning(hourly, 6, profile);
   ui.renderRunnerWarning(warning);
+  maybeNotifyDeterioration(warning);
 }
 
 function applyResolvedTheme(dailyToday) {
@@ -160,6 +167,9 @@ function wireEvents() {
   $('menu-btn').addEventListener('click', openDrawer);
   $('drawer-add-btn').addEventListener('click', () => { closeDrawer(); openSearch(); });
   $('use-location-btn').addEventListener('click', useDeviceLocation);
+  $('notify-btn').addEventListener('click', toggleNotifications);
+  $('heat-profile-btn').addEventListener('click', () => cycleProfile('heatTolerance'));
+  $('cold-profile-btn').addEventListener('click', () => cycleProfile('coldTolerance'));
 
   let searchDebounce;
   $('search-input').addEventListener('input', (e) => {
@@ -237,7 +247,63 @@ async function useDeviceLocation() {
   }
 }
 
-/* ============================== SERVICE WORKER ============================== */
+function cycleProfile(kind) {
+  const settings = storage.getSettings();
+  const nextValue = ui.nextTolerance(settings.runnerProfile[kind]);
+  const runnerProfile = { ...settings.runnerProfile, [kind]: nextValue };
+  storage.updateSettings({ runnerProfile });
+  if (state.weather) renderAll(); // recompute scores/recommendations with the new profile
+}
+
+async function toggleNotifications() {
+  const settings = storage.getSettings();
+  if (!settings.notificationsEnabled) {
+    if (!('Notification' in window)) {
+      ui.showStatusBanner('Уведомления не поддерживаются этим браузером.', 'warn');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      ui.showStatusBanner('Разрешение на уведомления не получено.', 'warn');
+      return;
+    }
+    storage.updateSettings({ notificationsEnabled: true });
+    ui.setNotificationButtonState(true);
+    ui.showStatusBanner('Уведомления об ухудшении погоды включены.', 'info');
+    setTimeout(ui.hideStatusBanner, 2000);
+  } else {
+    storage.updateSettings({ notificationsEnabled: false });
+    ui.setNotificationButtonState(false);
+  }
+}
+
+/**
+ * Fires a local notification when the forecast is about to deteriorate,
+ * throttled to once per hour per city so refresh cycles don't spam the user.
+ */
+async function maybeNotifyDeterioration(warning) {
+  if (!warning || !state.activeCity) return;
+  const settings = storage.getSettings();
+  if (!settings.notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+
+  const cooldownMs = 60 * 60 * 1000;
+  const lastNotified = storage.getLastNotifiedAt(state.activeCity.id);
+  if (Date.now() - lastNotified < cooldownMs) return;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification('Погода для бегуна', {
+      body: warning.message,
+      icon: 'icons/icon.svg',
+      tag: 'weather-deterioration',
+    });
+    storage.setLastNotifiedAt(state.activeCity.id, Date.now());
+  } catch (err) {
+    console.warn('Failed to show notification:', err);
+  }
+}
+
+
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;

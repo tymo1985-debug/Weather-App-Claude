@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/themes.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/runner.css">
+  <link rel="stylesheet" href="css/chart.css">
   <link rel="stylesheet" href="css/animations.css">
 </head>
 <body>
@@ -39,6 +40,9 @@
       </button>
       <button id="theme-btn" class="icon-btn" aria-label="Тема">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.4 5.4 0 0 1-7.54-7.54A9 9 0 0 0 12 3z"/></svg>
+      </button>
+      <button id="notify-btn" class="icon-btn" aria-label="Уведомления">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22zm7-6v-5a7 7 0 0 0-5.5-6.84V3a1.5 1.5 0 0 0-3 0v1.16A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>
       </button>
     </header>
 
@@ -101,6 +105,11 @@
           </div>
         </div>
 
+        <div class="runner-profile-row" id="runner-profile-row">
+          <button class="profile-chip" id="heat-profile-btn" data-kind="heatTolerance">🌡️ Жара: <span id="heat-profile-value">обычная</span></button>
+          <button class="profile-chip" id="cold-profile-btn" data-kind="coldTolerance">❄️ Холод: <span id="cold-profile-value">обычная</span></button>
+        </div>
+
         <div id="runner-warning" class="runner-warning hidden"></div>
 
         <div class="runner-timeline-wrap">
@@ -113,6 +122,12 @@
         <div class="runner-details-grid" id="runner-details-grid"></div>
 
         <div class="runner-clothing" id="runner-clothing"></div>
+      </section>
+
+      <!-- ---------- TEMPERATURE CHART ---------- -->
+      <section class="section-block">
+        <h2 class="section-title">Температура, 24 часа</h2>
+        <div class="chart-card glass" id="temp-chart"></div>
       </section>
 
       <!-- ---------- HOURLY FORECAST ---------- -->

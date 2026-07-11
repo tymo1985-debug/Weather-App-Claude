@@ -47,14 +47,25 @@ function windChillC(tempC, windKmh) {
   return 13.12 + 0.6215 * tempC - 11.37 * Math.pow(windKmh, 0.16) + 0.3965 * tempC * Math.pow(windKmh, 0.16);
 }
 
+const DEFAULT_PROFILE = { heatTolerance: 'average', coldTolerance: 'average' };
+
+// Shifts the "ideal" comfort bounds and penalty severity based on the runner's
+// self-reported acclimatization, so e.g. someone used to heat isn't scored
+// as harshly at 20°C as someone who is heat-sensitive.
+const HEAT_ADJUST = { sensitive: { boundShift: -3, multiplier: 1.3 }, average: { boundShift: 0, multiplier: 1 }, adapted: { boundShift: 4, multiplier: 0.7 } };
+const COLD_ADJUST = { sensitive: { boundShift: 3, multiplier: 1.3 }, average: { boundShift: 0, multiplier: 1 }, adapted: { boundShift: -4, multiplier: 0.7 } };
+
 /**
  * Scores a single hour of weather for running suitability.
  * @param {object} hour one row from the normalized `hourly` array, plus optional `is_day`
+ * @param {{heatTolerance:string, coldTolerance:string}} [profile] runner's personal acclimatization
  * @returns {{score:number, feelsLike:number, factors:string[]}}
  */
-export function scoreHour(hour) {
+export function scoreHour(hour, profile = DEFAULT_PROFILE) {
   let score = 100;
   const factors = [];
+  const heat = HEAT_ADJUST[profile.heatTolerance] || HEAT_ADJUST.average;
+  const cold = COLD_ADJUST[profile.coldTolerance] || COLD_ADJUST.average;
 
   const temp = hour.apparent_temperature ?? hour.temperature_2m;
   const humidity = hour.relative_humidity_2m ?? 50;
@@ -70,15 +81,17 @@ export function scoreHour(hour) {
   const feelsCold = windChillC(temp, wind);
   const feelsLike = temp >= 20 ? feelsHot : temp <= 10 ? feelsCold : temp;
 
-  // --- Temperature comfort (ideal running range ~5-15°C apparent) ---
-  if (feelsLike > 15) {
-    const over = feelsLike - 15;
-    const penalty = Math.min(55, over * 3.2);
+  // --- Temperature comfort (ideal running range ~5-15°C apparent, shifted by profile) ---
+  const upperBound = 15 + heat.boundShift;
+  const lowerBound = 5 + cold.boundShift;
+  if (feelsLike > upperBound) {
+    const over = feelsLike - upperBound;
+    const penalty = Math.min(55, over * 3.2 * heat.multiplier);
     score -= penalty;
     if (over > 8) factors.push('высокий риск перегрева');
-  } else if (feelsLike < 5) {
-    const under = 5 - feelsLike;
-    const penalty = Math.min(50, under * 3);
+  } else if (feelsLike < lowerBound) {
+    const under = lowerBound - feelsLike;
+    const penalty = Math.min(50, under * 3 * cold.multiplier);
     score -= penalty;
     if (under > 15) factors.push('риск переохлаждения');
   }
@@ -122,11 +135,12 @@ export function scoreHour(hour) {
 /**
  * Builds a 24-segment comfort timeline starting from the current hour.
  * @param {Array} hourlyRows normalized hourly rows (>= 24 entries expected)
+ * @param {object} [profile] runner's personal acclimatization
  * @returns {Array<{time:string, score:number, level:object}>}
  */
-export function buildComfortTimeline(hourlyRows) {
+export function buildComfortTimeline(hourlyRows, profile = DEFAULT_PROFILE) {
   return hourlyRows.slice(0, 24).map((row) => {
-    const { score } = scoreHour(row);
+    const { score } = scoreHour(row, profile);
     return { time: row.time, score, level: levelForScore(score) };
   });
 }
@@ -153,9 +167,10 @@ function clothingAdvice(feelsLike) {
 /**
  * Produces the full set of running recommendations for the current conditions,
  * given the current hour, the rest of today's hourly rows and today's daily summary.
+ * @param {object} profile runner's personal heat/cold acclimatization
  */
-export function generateRecommendations(currentHourRow, todayHourlyRows, dailyToday) {
-  const { score, feelsLike, factors } = scoreHour(currentHourRow);
+export function generateRecommendations(currentHourRow, todayHourlyRows, dailyToday, profile = DEFAULT_PROFILE) {
+  const { score, feelsLike, factors } = scoreHour(currentHourRow, profile);
   const level = levelForScore(score);
 
   const wind = currentHourRow.wind_speed_10m ?? 0;
@@ -205,14 +220,14 @@ export function generateRecommendations(currentHourRow, todayHourlyRows, dailyTo
  * @param {Array} hourlyRows normalized hourly rows starting at (or after) "now"
  * @param {number} lookaheadHours how many hours ahead to scan (default 6)
  */
-export function checkDeteriorationWarning(hourlyRows, lookaheadHours = 6) {
+export function checkDeteriorationWarning(hourlyRows, lookaheadHours = 6, profile = DEFAULT_PROFILE) {
   if (!hourlyRows.length) return null;
-  const baseline = scoreHour(hourlyRows[0]).score;
+  const baseline = scoreHour(hourlyRows[0], profile).score;
   const baselineCode = hourlyRows[0].weather_code;
 
   for (let i = 1; i < Math.min(lookaheadHours + 1, hourlyRows.length); i++) {
     const row = hourlyRows[i];
-    const { score } = scoreHour(row);
+    const { score } = scoreHour(row, profile);
     const code = row.weather_code;
 
     const newSevere =

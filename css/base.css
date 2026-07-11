@@ -93,6 +93,7 @@ h1, h2, h3, p { margin: 0; }
   transition: transform 0.15s ease, background 0.2s ease;
 }
 .icon-btn:active { transform: scale(0.92); }
+.icon-btn.active { background: var(--hero-gradient); color: #fff; }
 
 /* Visible keyboard focus ring, kept subtle but always present */
 :focus-visible {

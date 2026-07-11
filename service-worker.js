@@ -12,7 +12,7 @@
  * cleaned up and clients pick up the new assets.
  */
 
-const CACHE_VERSION = 'weather-pwa-v1';
+const CACHE_VERSION = 'weather-pwa-v2';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -24,6 +24,7 @@ const APP_SHELL_FILES = [
   './css/themes.css',
   './css/components.css',
   './css/runner.css',
+  './css/chart.css',
   './css/animations.css',
   './js/app.js',
   './js/ui.js',
@@ -102,3 +103,15 @@ async function networkFirst(request) {
     throw err;
   }
 }
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes('index.html') && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow('./index.html');
+    })
+  );
+});

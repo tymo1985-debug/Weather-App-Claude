@@ -18,6 +18,11 @@ const DEFAULT_SETTINGS = {
   theme: 'auto',       // 'light' | 'dark' | 'auto'
   units: 'metric',     // 'metric' | 'imperial'
   windUnit: 'kmh',     // 'kmh' | 'ms' | 'mph'
+  notificationsEnabled: false,
+  runnerProfile: {
+    heatTolerance: 'average', // 'sensitive' | 'average' | 'adapted'
+    coldTolerance: 'average', // 'sensitive' | 'average' | 'adapted'
+  },
 };
 
 /** Safely parse JSON, returning a fallback value on any failure. */
@@ -89,5 +94,13 @@ export const storage = {
     const merged = { ...this.getSettings(), ...partial };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
     return merged;
+  },
+
+  /** Timestamp (ms) of the last deterioration-warning notification we fired, per city. */
+  getLastNotifiedAt(cityId) {
+    return Number(localStorage.getItem(`weatherApp.lastNotified.${cityId}`) || 0);
+  },
+  setLastNotifiedAt(cityId, timeMs) {
+    localStorage.setItem(`weatherApp.lastNotified.${cityId}`, String(timeMs));
   },
 };
