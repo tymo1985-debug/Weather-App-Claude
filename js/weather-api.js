@@ -22,7 +22,7 @@ const AIR_QUALITY_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality';
 const CURRENT_FIELDS = [
   'temperature_2m', 'relative_humidity_2m', 'apparent_temperature', 'is_day',
   'precipitation', 'rain', 'showers', 'snowfall', 'weather_code',
-  'cloud_cover', 'pressure_msl', 'surface_pressure',
+  'cloud_cover', 'pressure_msl', 'surface_pressure', 'dew_point_2m',
   'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m',
 ];
 
@@ -52,6 +52,32 @@ function transpose(block) {
   });
 }
 
+/** Simple delay helper used between retry attempts. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetches a URL with exponential-backoff retries, since flaky mobile
+ * connections are the norm rather than the exception for this app.
+ * @param {string} url
+ * @param {{retries?: number, baseDelayMs?: number}} [options]
+ */
+async function fetchWithRetry(url, { retries = 2, baseDelayMs = 600 } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) await sleep(baseDelayMs * 2 ** attempt);
+    }
+  }
+  throw lastError;
+}
+
 class OpenMeteoProvider {
   /**
    * Fetches current conditions, 48h hourly forecast, 10-day daily forecast
@@ -69,12 +95,12 @@ class OpenMeteoProvider {
     forecastUrl.searchParams.set('forecast_hours', '48');
 
     const [forecastRes, airRes] = await Promise.allSettled([
-      fetch(forecastUrl.toString()),
+      fetchWithRetry(forecastUrl.toString(), { retries: 2, baseDelayMs: 600 }),
       this.#fetchAirQuality(latitude, longitude),
     ]);
 
-    if (forecastRes.status !== 'fulfilled' || !forecastRes.value.ok) {
-      throw new Error('Failed to fetch weather forecast');
+    if (forecastRes.status !== 'fulfilled') {
+      throw new Error('Failed to fetch weather forecast after retries');
     }
     const forecast = await forecastRes.value.json();
     const airQuality = airRes.status === 'fulfilled' ? airRes.value : null;
@@ -90,8 +116,7 @@ class OpenMeteoProvider {
     url.searchParams.set('hourly', 'pm10,pm2_5,us_aqi');
     url.searchParams.set('forecast_days', '2');
 
-    const response = await fetch(url.toString());
-    if (!response.ok) return null;
+    const response = await fetchWithRetry(url.toString(), { retries: 1, baseDelayMs: 500 });
     return response.json();
   }
 

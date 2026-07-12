@@ -38,6 +38,9 @@
       <button id="search-btn" class="icon-btn" aria-label="Поиск города">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5L20.5 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
       </button>
+      <button id="refresh-btn" class="icon-btn" aria-label="Обновить">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+      </button>
       <button id="theme-btn" class="icon-btn" aria-label="Тема">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.4 5.4 0 0 1-7.54-7.54A9 9 0 0 0 12 3z"/></svg>
       </button>
@@ -64,15 +67,32 @@
         <h2 class="drawer-title">Мои города</h2>
         <ul id="favorites-list" class="favorites-list"></ul>
         <button id="drawer-add-btn" class="location-btn">＋ Добавить город</button>
+
+        <h2 class="drawer-title">Единицы измерения</h2>
+        <div class="runner-profile-row">
+          <button class="profile-chip" id="units-btn">🌡️ <span id="units-value">°C</span></button>
+          <button class="profile-chip" id="wind-unit-btn">💨 <span id="wind-unit-value">км/ч</span></button>
+        </div>
       </div>
     </div>
 
     <!-- ============================ MAIN CONTENT ============================ -->
     <main id="main-content" class="main-content">
+      <div id="pull-indicator" class="pull-indicator">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+      </div>
 
       <!-- Loading / offline banners -->
       <div id="status-banner" class="status-banner hidden"></div>
 
+      <div id="skeleton-overlay" class="skeleton-overlay">
+        <div class="skeleton skeleton-hero"></div>
+        <div class="skeleton skeleton-runner"></div>
+        <div class="skeleton skeleton-block"></div>
+        <div class="skeleton skeleton-block"></div>
+      </div>
+
+      <div id="content-sections" class="hidden">
       <!-- ---------- HERO: current conditions ---------- -->
       <section class="hero-card glass" id="hero-card">
         <div class="hero-top">
@@ -149,6 +169,7 @@
       </section>
 
       <footer class="app-footer">Данные: Open-Meteo · Обновляется автоматически</footer>
+      </div>
     </main>
   </div>
 

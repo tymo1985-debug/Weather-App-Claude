@@ -7,9 +7,9 @@
  */
 
 import { storage } from './storage.js';
-import { searchCities, reverseGeocode, getDeviceLocation } from './geocoding.js';
 import { weatherProvider } from './weather-api.js';
 import { runnerEngine } from './runner-engine.js';
+import { UNIT_LABELS } from './units.js';
 import * as ui from './ui.js';
 
 const state = {
@@ -17,19 +17,29 @@ const state = {
   activeCity: null,
   weather: null,     // normalized payload for the active city
   isOffline: false,
+  hasRenderedOnce: false,
 };
 
 const $ = (id) => document.getElementById(id);
+const MANUAL_REFRESH_COOLDOWN_MS = 60 * 1000;
+
+/** Fires a short vibration if the device supports it; silently no-ops otherwise. */
+function haptic(pattern = 12) {
+  if ('vibrate' in navigator) navigator.vibrate(pattern);
+}
 
 /* ============================== INITIALIZATION ============================== */
 
 async function init() {
   registerServiceWorker();
   wireEvents();
+  wirePullToRefresh();
+  wireSwipeBetweenCities();
 
   const settings = storage.getSettings();
   ui.applyTheme(settings.theme === 'auto' ? 'light' : settings.theme); // provisional, refined after first fetch
   ui.setNotificationButtonState(settings.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted');
+  updateUnitButtons(settings);
 
   state.favorites = storage.getFavorites();
 
@@ -50,11 +60,20 @@ async function init() {
   } else {
     ui.showStatusBanner('Не удалось определить местоположение. Найдите город вручную.', 'warn');
   }
+
+  window.addEventListener('online', () => {
+    ui.setRefreshButtonState({ offline: false });
+    if (state.activeCity) refreshWeather(state.activeCity);
+  });
+  window.addEventListener('offline', () => ui.setRefreshButtonState({ offline: true }));
 }
 
 async function detectStartCity() {
   try {
     ui.showStatusBanner('Определяем ваше местоположение…', 'info');
+    // Geocoding is only needed for search/geolocation, so it's loaded on demand
+    // to keep the very first paint of the app as light as possible.
+    const { getDeviceLocation, reverseGeocode } = await import('./geocoding.js');
     const coords = await getDeviceLocation();
     const city = await reverseGeocode(coords.latitude, coords.longitude);
     ui.hideStatusBanner();
@@ -77,12 +96,12 @@ async function selectCity(city, { addIfMissing = false } = {}) {
   }
 
   ui.renderCityTabs(state.favorites, city.id, (c) => selectCity(c));
-  renderFromCache(city); // show something instantly if we have it
+  await renderFromCache(city); // show something instantly if we have it
   await refreshWeather(city);
 }
 
-function renderFromCache(city) {
-  const cached = storage.getCachedWeather(city.id);
+async function renderFromCache(city) {
+  const cached = await storage.getCachedWeather(city.id);
   if (cached) {
     state.weather = cached.payload;
     renderAll();
@@ -97,13 +116,15 @@ async function refreshWeather(city) {
     const payload = await weatherProvider.fetchWeather(city.latitude, city.longitude);
     state.weather = payload;
     state.isOffline = false;
-    storage.cacheWeather(city.id, payload);
+    ui.setRefreshButtonState({ offline: false });
+    await storage.cacheWeather(city.id, payload);
     ui.hideStatusBanner();
     renderAll();
   } catch (err) {
     console.warn('Weather fetch failed, falling back to cache:', err);
     state.isOffline = true;
-    const cached = storage.getCachedWeather(city.id);
+    ui.setRefreshButtonState({ offline: true });
+    const cached = await storage.getCachedWeather(city.id);
     if (cached) {
       state.weather = cached.payload;
       renderAll();
@@ -115,37 +136,78 @@ async function refreshWeather(city) {
   }
 }
 
+/**
+ * Manually triggered refresh (button tap or pull-to-refresh), rate-limited so
+ * an impatient user tapping repeatedly can't hammer the free Open-Meteo API.
+ */
+async function manualRefresh() {
+  if (!state.activeCity) return;
+  const last = storage.getLastManualRefreshAt();
+  if (Date.now() - last < MANUAL_REFRESH_COOLDOWN_MS) {
+    ui.showStatusBanner('Уже обновлено недавно — попробуйте через минуту.', 'info');
+    setTimeout(ui.hideStatusBanner, 1800);
+    return;
+  }
+  if (!navigator.onLine) {
+    ui.showStatusBanner('Нет соединения с интернетом.', 'warn');
+    return;
+  }
+  storage.setLastManualRefreshAt(Date.now());
+  haptic(10);
+  ui.setRefreshButtonState({ spinning: true });
+  await refreshWeather(state.activeCity);
+  ui.setRefreshButtonState({ spinning: false });
+}
+
 /* ============================== RENDERING ORCHESTRATION ============================== */
+
+/** Runs a render step in isolation so one bad data field can't blank the whole screen. */
+function safeRender(label, fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`Render step "${label}" failed:`, err);
+  }
+}
 
 function renderAll() {
   if (!state.weather || !state.activeCity) return;
   const { current, hourly, daily } = state.weather;
   const dailyToday = daily[0];
-
-  applyResolvedTheme(dailyToday);
-
-  ui.renderHero(state.activeCity, current, dailyToday);
-  ui.renderTemperatureChart(hourly);
-  ui.renderHourly(hourly);
-  ui.renderDaily(daily);
-  ui.renderDetailsGrid(current, dailyToday);
-  ui.startWeatherAnimation(current.weather_code);
-
   const settings = storage.getSettings();
   const profile = settings.runnerProfile;
-  ui.renderProfileChips(profile);
-
   const currentHourRow = runnerEngine.findCurrentHourRow(hourly);
-  const timeline = runnerEngine.buildComfortTimeline(hourly, profile);
-  const nowIndex = timeline.findIndex((seg) => seg.time === currentHourRow.time);
-  ui.renderRunnerTimeline(timeline, Math.max(0, nowIndex));
 
-  const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday, profile);
-  ui.renderRunnerRecommendations(recommendations);
+  safeRender('theme', () => applyResolvedTheme(dailyToday));
+  safeRender('hero', () => ui.renderHero(state.activeCity, current, dailyToday, settings));
+  safeRender('chart', () => ui.renderTemperatureChart(hourly));
+  safeRender('hourly', () => ui.renderHourly(hourly, settings));
+  safeRender('daily', () => ui.renderDaily(daily, settings));
+  safeRender('details', () => ui.renderDetailsGrid(current, dailyToday, currentHourRow, settings));
+  safeRender('bg-animation', () => ui.startWeatherAnimation(current.weather_code));
+  safeRender('profile-chips', () => ui.renderProfileChips(profile));
 
-  const warning = runnerEngine.checkDeteriorationWarning(hourly, 6, profile);
-  ui.renderRunnerWarning(warning);
-  maybeNotifyDeterioration(warning);
+  safeRender('runner-timeline', () => {
+    const timeline = runnerEngine.buildComfortTimeline(hourly, profile);
+    const nowIndex = timeline.findIndex((seg) => seg.time === currentHourRow.time);
+    ui.renderRunnerTimeline(timeline, Math.max(0, nowIndex));
+  });
+
+  safeRender('runner-recommendations', () => {
+    const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday, profile);
+    ui.renderRunnerRecommendations(recommendations);
+  });
+
+  safeRender('runner-warning', () => {
+    const warning = runnerEngine.checkDeteriorationWarning(hourly, 6, profile);
+    ui.renderRunnerWarning(warning);
+    maybeNotifyDeterioration(warning);
+  });
+
+  if (!state.hasRenderedOnce) {
+    state.hasRenderedOnce = true;
+    ui.hideSkeletons();
+  }
 }
 
 function applyResolvedTheme(dailyToday) {
@@ -166,10 +228,13 @@ function wireEvents() {
   $('search-close').addEventListener('click', closeSearch);
   $('menu-btn').addEventListener('click', openDrawer);
   $('drawer-add-btn').addEventListener('click', () => { closeDrawer(); openSearch(); });
-  $('use-location-btn').addEventListener('click', useDeviceLocation);
+  $('refresh-btn').addEventListener('click', manualRefresh);
   $('notify-btn').addEventListener('click', toggleNotifications);
   $('heat-profile-btn').addEventListener('click', () => cycleProfile('heatTolerance'));
   $('cold-profile-btn').addEventListener('click', () => cycleProfile('coldTolerance'));
+  $('units-btn').addEventListener('click', cycleTempUnit);
+  $('wind-unit-btn').addEventListener('click', cycleWindUnit);
+  $('use-location-btn').addEventListener('click', useDeviceLocation);
 
   let searchDebounce;
   $('search-input').addEventListener('input', (e) => {
@@ -184,7 +249,6 @@ function wireEvents() {
 
   // Periodically refresh in the background so data stays fresh while the app is open.
   setInterval(() => { if (state.activeCity && navigator.onLine) refreshWeather(state.activeCity); }, 15 * 60 * 1000);
-  window.addEventListener('online', () => { if (state.activeCity) refreshWeather(state.activeCity); });
 }
 
 function cycleTheme() {
@@ -208,22 +272,44 @@ function closeSearch() {
 }
 
 function openDrawer() {
-  ui.renderFavoritesList(state.favorites, state.activeCity?.id, (city) => { selectCity(city); closeDrawer(); }, removeFavorite);
+  ui.renderFavoritesList(
+    state.favorites, state.activeCity?.id,
+    (city) => { selectCity(city); closeDrawer(); },
+    removeFavorite,
+    reorderFavorites
+  );
   $('drawer-overlay').classList.remove('hidden');
 }
 function closeDrawer() {
   $('drawer-overlay').classList.add('hidden');
 }
 
+function refreshDrawerAndTabs() {
+  ui.renderFavoritesList(
+    state.favorites, state.activeCity?.id,
+    (c) => { selectCity(c); closeDrawer(); },
+    removeFavorite,
+    reorderFavorites
+  );
+  ui.renderCityTabs(state.favorites, state.activeCity?.id, (c) => selectCity(c));
+}
+
 function removeFavorite(city) {
   state.favorites = storage.removeFavorite(city.id);
-  ui.renderFavoritesList(state.favorites, state.activeCity?.id, (c) => { selectCity(c); closeDrawer(); }, removeFavorite);
-  ui.renderCityTabs(state.favorites, state.activeCity?.id, (c) => selectCity(c));
+  haptic(8);
+  refreshDrawerAndTabs();
+}
+
+function reorderFavorites(orderedIds) {
+  state.favorites = storage.reorderFavorites(orderedIds);
+  haptic(8);
+  refreshDrawerAndTabs();
 }
 
 async function runSearch(query) {
   if (!query || query.trim().length < 2) { $('search-results').innerHTML = ''; return; }
   try {
+    const { searchCities } = await import('./geocoding.js');
     const results = await searchCities(query);
     ui.renderSearchResults(results, (city) => {
       selectCity(city, { addIfMissing: true });
@@ -237,6 +323,7 @@ async function runSearch(query) {
 async function useDeviceLocation() {
   try {
     ui.showStatusBanner('Определяем местоположение…', 'info');
+    const { getDeviceLocation, reverseGeocode } = await import('./geocoding.js');
     const coords = await getDeviceLocation();
     const city = await reverseGeocode(coords.latitude, coords.longitude);
     ui.hideStatusBanner();
@@ -252,7 +339,32 @@ function cycleProfile(kind) {
   const nextValue = ui.nextTolerance(settings.runnerProfile[kind]);
   const runnerProfile = { ...settings.runnerProfile, [kind]: nextValue };
   storage.updateSettings({ runnerProfile });
+  haptic(8);
   if (state.weather) renderAll(); // recompute scores/recommendations with the new profile
+}
+
+function updateUnitButtons(settings) {
+  $('units-value').textContent = UNIT_LABELS.units[settings.units];
+  $('wind-unit-value').textContent = UNIT_LABELS.windUnit[settings.windUnit];
+}
+
+function cycleTempUnit() {
+  const settings = storage.getSettings();
+  const next = settings.units === 'metric' ? 'imperial' : 'metric';
+  const updated = storage.updateSettings({ units: next });
+  updateUnitButtons(updated);
+  haptic(8);
+  if (state.weather) renderAll();
+}
+
+function cycleWindUnit() {
+  const settings = storage.getSettings();
+  const order = ['kmh', 'ms', 'mph'];
+  const next = order[(order.indexOf(settings.windUnit) + 1) % order.length];
+  const updated = storage.updateSettings({ windUnit: next });
+  updateUnitButtons(updated);
+  haptic(8);
+  if (state.weather) renderAll();
 }
 
 async function toggleNotifications() {
@@ -275,6 +387,7 @@ async function toggleNotifications() {
     storage.updateSettings({ notificationsEnabled: false });
     ui.setNotificationButtonState(false);
   }
+  haptic(8);
 }
 
 /**
@@ -303,14 +416,98 @@ async function maybeNotifyDeterioration(warning) {
   }
 }
 
+/* ============================== PULL-TO-REFRESH ============================== */
 
+function wirePullToRefresh() {
+  const main = $('main-content');
+  let startY = null;
+  let pulling = false;
+  const threshold = 70;
+
+  main.addEventListener('touchstart', (e) => {
+    if (main.scrollTop <= 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  main.addEventListener('touchmove', (e) => {
+    if (!pulling || startY === null) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta > 0 && main.scrollTop <= 0) {
+      ui.setPullIndicator(Math.min(1, delta / threshold));
+    }
+  }, { passive: true });
+
+  main.addEventListener('touchend', (e) => {
+    if (!pulling || startY === null) return;
+    const delta = (e.changedTouches[0]?.clientY ?? startY) - startY;
+    pulling = false;
+    startY = null;
+    if (delta > threshold) {
+      ui.setPullIndicator(1, true);
+      manualRefresh().finally(() => ui.setPullIndicator(0));
+    } else {
+      ui.setPullIndicator(0);
+    }
+  });
+}
+
+/* ============================== SWIPE BETWEEN CITIES ============================== */
+
+function wireSwipeBetweenCities() {
+  const hero = $('hero-card');
+  let startX = null;
+  let startY = null;
+
+  hero.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  hero.addEventListener('touchend', (e) => {
+    if (startX === null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
+    const dy = (e.changedTouches[0]?.clientY ?? startY) - startY;
+    startX = null;
+    // Require a mostly-horizontal swipe so vertical scrolling isn't hijacked.
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (!state.favorites.length || !state.activeCity) return;
+
+    const idx = state.favorites.findIndex((c) => c.id === state.activeCity.id);
+    if (idx === -1) return;
+    const nextIdx = dx < 0
+      ? (idx + 1) % state.favorites.length
+      : (idx - 1 + state.favorites.length) % state.favorites.length;
+    haptic(10);
+    selectCity(state.favorites[nextIdx]);
+  });
+}
+
+/* ============================== SERVICE WORKER & BACKGROUND SYNC ============================== */
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch((err) => {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('service-worker.js');
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'PERIODIC_REFRESH' && state.activeCity && navigator.onLine) {
+          refreshWeather(state.activeCity);
+        }
+      });
+      // Best-effort: refresh forecasts periodically even while the app isn't open.
+      // Support is currently limited (mainly Chrome on Android with the PWA installed),
+      // so this is wrapped defensively and simply does nothing where unsupported.
+      if ('periodicSync' in registration) {
+        const status = await navigator.permissions.query({ name: 'periodic-background-sync' }).catch(() => null);
+        if (status?.state === 'granted') {
+          await registration.periodicSync.register('refresh-weather', { minInterval: 60 * 60 * 1000 });
+        }
+      }
+    } catch (err) {
       console.warn('Service worker registration failed:', err);
-    });
+    }
   });
 }
 

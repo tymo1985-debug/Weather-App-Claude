@@ -12,7 +12,7 @@
  * cleaned up and clients pick up the new assets.
  */
 
-const CACHE_VERSION = 'weather-pwa-v2';
+const CACHE_VERSION = 'weather-pwa-v3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -34,6 +34,7 @@ const APP_SHELL_FILES = [
   './js/runner-engine.js',
   './js/astro.js',
   './js/icons.js',
+  './js/units.js',
   './icons/icon.svg',
 ];
 
@@ -114,4 +115,18 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.openWindow) return clients.openWindow('./index.html');
     })
   );
+});
+
+// Best-effort periodic background refresh (where the browser supports the
+// Periodic Background Sync API and the PWA is installed). The service worker
+// itself has no notion of "which city" — it just wakes up any open app
+// instance so it can refresh with its own in-memory state.
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'refresh-weather') {
+    event.waitUntil(
+      self.clients.matchAll().then((clientList) => {
+        clientList.forEach((client) => client.postMessage({ type: 'PERIODIC_REFRESH' }));
+      })
+    );
+  }
 });

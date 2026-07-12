@@ -9,6 +9,7 @@
 
 import { getWeatherIconSvg, getWeatherDescription, getAnimationCategory } from './icons.js';
 import { getMoonPhase, formatDurationHM, formatTimeHM } from './astro.js';
+import { formatTemp, formatWind, UNIT_LABELS } from './units.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,6 +45,26 @@ export function hideStatusBanner() {
   $('status-banner').classList.add('hidden');
 }
 
+/** Reveals the real content and hides the loading skeleton, once the first render has data. */
+export function hideSkeletons() {
+  $('skeleton-overlay').classList.add('hidden');
+  $('content-sections').classList.remove('hidden');
+}
+
+/** Reflects refresh-in-progress / offline state onto the header refresh button. */
+export function setRefreshButtonState({ spinning = false, offline = false } = {}) {
+  const btn = $('refresh-btn');
+  btn.classList.toggle('spinning', spinning);
+  btn.classList.toggle('offline', offline);
+}
+
+/** Shows/hides and animates the pull-to-refresh indicator by height, 0..1 progress. */
+export function setPullIndicator(progress, spinning = false) {
+  const el = $('pull-indicator');
+  el.style.height = `${Math.min(56, progress * 56)}px`;
+  el.classList.toggle('spinning', spinning);
+}
+
 /* ============================== CITY TABS & FAVORITES ============================== */
 
 export function renderCityTabs(favorites, activeCityId, onSelect) {
@@ -60,18 +81,24 @@ export function renderCityTabs(favorites, activeCityId, onSelect) {
   });
 }
 
-export function renderFavoritesList(favorites, activeCityId, onSelect, onRemove) {
+export function renderFavoritesList(favorites, activeCityId, onSelect, onRemove, onReorder) {
   const list = $('favorites-list');
   list.innerHTML = '';
   if (!favorites.length) {
     list.innerHTML = '<p style="padding:12px;color:var(--text-tertiary);font-size:14px;">Пока нет сохранённых городов</p>';
     return;
   }
+
+  let dragSrcId = null;
+
   favorites.forEach((city) => {
     const li = document.createElement('li');
     li.className = 'favorite-item' + (city.id === activeCityId ? ' active' : '');
+    li.draggable = true;
+    li.dataset.cityId = city.id;
     li.innerHTML = `
-      <div>
+      <span class="drag-handle" aria-hidden="true">⠿</span>
+      <div style="flex:1;">
         <div class="result-name">${city.name}</div>
         <div class="result-region" style="margin-left:0;">${[city.admin1, city.country].filter(Boolean).join(', ')}</div>
       </div>
@@ -82,6 +109,21 @@ export function renderFavoritesList(favorites, activeCityId, onSelect, onRemove)
       e.stopPropagation();
       onRemove(city);
     });
+
+    // --- Drag-and-drop reordering (desktop mouse or touch-capable browsers) ---
+    li.addEventListener('dragstart', () => { dragSrcId = city.id; li.classList.add('dragging'); });
+    li.addEventListener('dragend', () => li.classList.remove('dragging'));
+    li.addEventListener('dragover', (e) => e.preventDefault());
+    li.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dragSrcId || dragSrcId === city.id) return;
+      const ids = Array.from(list.children).map((el) => el.dataset.cityId);
+      const fromIdx = ids.indexOf(dragSrcId);
+      const toIdx = ids.indexOf(city.id);
+      ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
+      onReorder(ids);
+    });
+
     list.appendChild(li);
   });
 }
@@ -103,22 +145,22 @@ export function renderSearchResults(results, onSelect) {
 
 /* ============================== HERO CARD ============================== */
 
-export function renderHero(city, current, dailyToday) {
+export function renderHero(city, current, dailyToday, settings = { units: 'metric' }) {
   $('hero-city-name').textContent = city.name;
   $('hero-updated').textContent = `Обновлено в ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
   $('hero-icon').innerHTML = getWeatherIconSvg(current.weather_code, current.is_day === 1);
-  $('hero-temp-value').textContent = `${Math.round(current.temperature_2m)}°`;
+  $('hero-temp-value').textContent = formatTemp(current.temperature_2m, settings.units);
   $('hero-description').textContent = getWeatherDescription(current.weather_code);
-  $('hero-feels-like').textContent = `Ощущается как ${Math.round(current.apparent_temperature)}°`;
+  $('hero-feels-like').textContent = `Ощущается как ${formatTemp(current.apparent_temperature, settings.units)}`;
   if (dailyToday) {
-    $('hero-temp-min').textContent = `${Math.round(dailyToday.temperature_2m_min)}°`;
-    $('hero-temp-max').textContent = `${Math.round(dailyToday.temperature_2m_max)}°`;
+    $('hero-temp-min').textContent = formatTemp(dailyToday.temperature_2m_min, settings.units);
+    $('hero-temp-max').textContent = formatTemp(dailyToday.temperature_2m_max, settings.units);
   }
 }
 
 /* ============================== HOURLY ============================== */
 
-export function renderHourly(hourlyRows) {
+export function renderHourly(hourlyRows, settings = { units: 'metric' }) {
   const container = $('hourly-scroll');
   container.innerHTML = '';
   hourlyRows.slice(0, 48).forEach((row, i) => {
@@ -128,7 +170,7 @@ export function renderHourly(hourlyRows) {
     item.innerHTML = `
       <span class="hour-time">${time}</span>
       ${getWeatherIconSvg(row.weather_code, row.is_day === 1)}
-      <span class="hour-temp">${Math.round(row.temperature_2m)}°</span>
+      <span class="hour-temp">${formatTemp(row.temperature_2m, settings.units)}</span>
       <span class="hour-precip">${row.precipitation_probability > 10 ? row.precipitation_probability + '%' : ''}</span>
     `;
     container.appendChild(item);
@@ -137,7 +179,7 @@ export function renderHourly(hourlyRows) {
 
 /* ============================== DAILY (10-day) ============================== */
 
-export function renderDaily(dailyRows) {
+export function renderDaily(dailyRows, settings = { units: 'metric' }) {
   const container = $('daily-list');
   container.innerHTML = '';
 
@@ -157,11 +199,11 @@ export function renderDaily(dailyRows) {
       ${getWeatherIconSvg(row.weather_code, true)}
       <span class="daily-precip">${row.precipitation_probability_max > 10 ? row.precipitation_probability_max + '%' : ''}</span>
       <div class="daily-range">
-        <span class="daily-min">${Math.round(row.temperature_2m_min)}°</span>
+        <span class="daily-min">${formatTemp(row.temperature_2m_min, settings.units)}</span>
         <div class="daily-bar-track">
           <div class="daily-bar-fill" style="left:${leftPct}%;width:${widthPct}%;"></div>
         </div>
-        <span class="daily-max">${Math.round(row.temperature_2m_max)}°</span>
+        <span class="daily-max">${formatTemp(row.temperature_2m_max, settings.units)}</span>
       </div>
     `;
     container.appendChild(item);
@@ -183,22 +225,25 @@ function windDirLabel(deg) {
   return WIND_DIRECTIONS[Math.round(deg / 22.5) % 16];
 }
 
-export function renderDetailsGrid(current, dailyToday) {
+export function renderDetailsGrid(current, dailyToday, currentHourRow, settings = { units: 'metric', windUnit: 'kmh' }) {
   const container = $('details-grid');
   const moon = getMoonPhase();
+  const visibilityKm = currentHourRow?.visibility != null ? (currentHourRow.visibility / 1000).toFixed(1) : null;
 
   container.innerHTML = [
-    tile('Ощущается', `${Math.round(current.apparent_temperature)}°`),
+    tile('Ощущается', formatTemp(current.apparent_temperature, settings.units)),
     tile('Влажность', `${current.relative_humidity_2m}%`),
+    tile('Осадки сейчас', `${current.precipitation ?? 0}`, 'мм'),
     tile('Давление', `${Math.round(current.pressure_msl)}`, 'гПа'),
-    tile('Ветер', `${Math.round(current.wind_speed_10m)} км/ч`, windDirLabel(current.wind_direction_10m)),
-    tile('Порывы ветра', `${Math.round(current.wind_gusts_10m)} км/ч`),
+    tile('Ветер', formatWind(current.wind_speed_10m, settings.windUnit), windDirLabel(current.wind_direction_10m)),
+    tile('Порывы ветра', formatWind(current.wind_gusts_10m, settings.windUnit)),
     tile('Облачность', `${current.cloud_cover}%`),
+    tile('Видимость', visibilityKm != null ? visibilityKm : '—', 'км'),
     tile('УФ-индекс', dailyToday ? Math.round(dailyToday.uv_index_max) : '—'),
     tile('Качество воздуха', current.us_aqi ?? '—', current.us_aqi ? aqiLabel(current.us_aqi) : ''),
     tile('PM2.5', current.pm2_5 != null ? `${Math.round(current.pm2_5)}` : '—', 'мкг/м³'),
     tile('PM10', current.pm10 != null ? `${Math.round(current.pm10)}` : '—', 'мкг/м³'),
-    tile('Точка росы', dailyToday ? '' : '', ''),
+    tile('Точка росы', current.dew_point_2m != null ? formatTemp(current.dew_point_2m, settings.units) : '—'),
     tile('Восход', dailyToday ? formatTimeHM(dailyToday.sunrise) : '—'),
     tile('Закат', dailyToday ? formatTimeHM(dailyToday.sunset) : '—'),
     tile('Световой день', dailyToday ? formatDurationHM(dailyToday.daylight_duration) : '—'),
@@ -504,10 +549,26 @@ export function startWeatherAnimation(weatherCode) {
   seedParticles(category);
 
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
-  drawParticles(category);
+  if (!document.hidden) drawParticles(category);
 }
 
+// Pause the animation loop while the tab/app is backgrounded — no point burning
+// battery drawing frames nobody can see, especially on a phone.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  } else if (currentCategory && !animationFrameId) {
+    drawParticles(currentCategory);
+  }
+});
+
+let resizeRaf = null;
 window.addEventListener('resize', () => {
-  resizeCanvas();
-  if (currentCategory) seedParticles(currentCategory);
+  if (resizeRaf) return;
+  resizeRaf = requestAnimationFrame(() => {
+    resizeCanvas();
+    if (currentCategory) seedParticles(currentCategory);
+    resizeRaf = null;
+  });
 });

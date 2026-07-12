@@ -48,4 +48,33 @@
   border-radius: var(--radius-sm);
 }
 
+.skeleton-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: opacity 0.25s ease;
+}
+.skeleton-overlay.hidden { display: none; }
+.skeleton-hero { height: 190px; border-radius: var(--radius-lg); }
+.skeleton-runner { height: 260px; border-radius: var(--radius-lg); }
+.skeleton-block { height: 120px; border-radius: var(--radius-lg); }
+
 .runner-segment { animation: fadeIn 0.5s ease both; }
+
+.icon-btn.spinning svg { animation: sunSpin 0.8s linear infinite; }
+.icon-btn.offline { background: rgba(255, 75, 75, 0.18); color: #FF4B4B; }
+
+@keyframes pullIndicatorSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.pull-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 0;
+  overflow: hidden;
+  transition: height 0.15s ease;
+  color: var(--accent);
+}
+.pull-indicator svg { animation: pullIndicatorSpin 0.7s linear infinite; }

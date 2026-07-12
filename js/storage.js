@@ -1,16 +1,17 @@
 /**
  * storage.js
  * ---------------------------------------------------------------------------
- * Thin persistence layer built on top of localStorage.
- * Centralising all reads/writes here means the rest of the app never touches
- * localStorage directly, which makes it trivial to swap the backing store
- * later (e.g. IndexedDB) without touching UI or business logic code.
+ * Persistence layer for the app. Small, frequently-read data (favorites,
+ * settings, active city) stays in localStorage — it's synchronous and tiny.
+ * Weather payloads are bigger and grow with every extra favorite city, so
+ * they live in IndexedDB instead, with a localStorage fallback for browsers
+ * or private-browsing modes where IndexedDB is unavailable.
  */
 
 const STORAGE_KEYS = {
   FAVORITES: 'weatherApp.favorites',      // array of city objects
   ACTIVE_CITY: 'weatherApp.activeCityId', // id of the currently selected city
-  CACHE: 'weatherApp.cache.',             // prefix + cityId -> cached weather payload
+  CACHE_FALLBACK: 'weatherApp.cacheFallback.', // prefix used only if IndexedDB is unavailable
   SETTINGS: 'weatherApp.settings',        // theme, units, etc.
 };
 
@@ -25,6 +26,10 @@ const DEFAULT_SETTINGS = {
   },
 };
 
+const DB_NAME = 'weatherAppDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'weatherCache';
+
 /** Safely parse JSON, returning a fallback value on any failure. */
 function safeParse(raw, fallback) {
   if (raw === null || raw === undefined) return fallback;
@@ -34,6 +39,42 @@ function safeParse(raw, fallback) {
     console.warn('storage: failed to parse value, using fallback', err);
     return fallback;
   }
+}
+
+let dbPromise = null;
+/** Opens (or creates) the single IndexedDB database used for weather caching. */
+function openDB() {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB unavailable'));
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
+        request.result.createObjectStore(STORE_NAME, { keyPath: 'cityId' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return dbPromise;
+}
+
+function idbGet(cityId) {
+  return openDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(cityId);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function idbSet(record) {
+  return openDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(record);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  }));
 }
 
 export const storage = {
@@ -63,6 +104,15 @@ export const storage = {
     return updated;
   },
 
+  /** Reorders favorites to match the given array of city ids (used by drag-and-drop). */
+  reorderFavorites(orderedIds) {
+    const favorites = this.getFavorites();
+    const byId = new Map(favorites.map((c) => [c.id, c]));
+    const reordered = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+    this.saveFavorites(reordered);
+    return reordered;
+  },
+
   /** Reads/writes which city the user last viewed, so we can restore it on launch. */
   getActiveCityId() {
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_CITY);
@@ -72,16 +122,31 @@ export const storage = {
   },
 
   /** Caches the last successfully fetched weather payload for a city, with a timestamp. */
-  cacheWeather(cityId, payload) {
-    const record = { payload, cachedAt: Date.now() };
-    localStorage.setItem(STORAGE_KEYS.CACHE + cityId, JSON.stringify(record));
+  async cacheWeather(cityId, payload) {
+    const record = { cityId, payload, cachedAt: Date.now() };
+    try {
+      await idbSet(record);
+    } catch (err) {
+      console.warn('IndexedDB write failed, falling back to localStorage', err);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CACHE_FALLBACK + cityId, JSON.stringify(record));
+      } catch (fallbackErr) {
+        console.warn('localStorage cache fallback also failed (quota?):', fallbackErr);
+      }
+    }
   },
 
   /** Retrieves a cached payload (and its age in ms) for a city, or null if none exists. */
-  getCachedWeather(cityId) {
-    const record = safeParse(localStorage.getItem(STORAGE_KEYS.CACHE + cityId), null);
-    if (!record) return null;
-    return { payload: record.payload, ageMs: Date.now() - record.cachedAt };
+  async getCachedWeather(cityId) {
+    try {
+      const record = await idbGet(cityId);
+      if (record) return { payload: record.payload, ageMs: Date.now() - record.cachedAt };
+    } catch (err) {
+      console.warn('IndexedDB read failed, falling back to localStorage', err);
+    }
+    const fallback = safeParse(localStorage.getItem(STORAGE_KEYS.CACHE_FALLBACK + cityId), null);
+    if (!fallback) return null;
+    return { payload: fallback.payload, ageMs: Date.now() - fallback.cachedAt };
   },
 
   /** Reads persisted settings, merged over defaults so new fields get sane values. */
@@ -103,4 +168,13 @@ export const storage = {
   setLastNotifiedAt(cityId, timeMs) {
     localStorage.setItem(`weatherApp.lastNotified.${cityId}`, String(timeMs));
   },
+
+  /** Timestamp (ms) of the last manual (pull-to-refresh / button) refresh, used to rate-limit it. */
+  getLastManualRefreshAt() {
+    return Number(sessionStorage.getItem('weatherApp.lastManualRefresh') || 0);
+  },
+  setLastManualRefreshAt(timeMs) {
+    sessionStorage.setItem('weatherApp.lastManualRefresh', String(timeMs));
+  },
 };
+

@@ -68,6 +68,8 @@ const TEMPLATES = {
   thunder: () => `${CLOUD}${BOLT}`,
 };
 
+const iconCache = new Map();
+
 /**
  * Returns inline SVG markup for a given WMO weather code.
  * @param {number} weatherCode
@@ -75,9 +77,13 @@ const TEMPLATES = {
  * @returns {string} SVG markup (without the outer <svg> wrapper)
  */
 export function getWeatherIconSvg(weatherCode, isDay = true) {
+  const cacheKey = `${weatherCode}-${isDay}`;
+  if (iconCache.has(cacheKey)) return iconCache.get(cacheKey);
   const category = categorize(weatherCode);
   const body = TEMPLATES[category](isDay);
-  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" class="weather-icon">${DEFS}${body}</svg>`;
+  const svg = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" class="weather-icon">${DEFS}${body}</svg>`;
+  iconCache.set(cacheKey, svg);
+  return svg;
 }
 
 /** Returns a short human description in Russian for a weather code (used as alt text / labels). */
