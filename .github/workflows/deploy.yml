@@ -1,0 +1,55 @@
+# .github/workflows/deploy.yml
+# ---------------------------------------------------------------------------
+# Auto-deploys this project to GitHub Pages on every push to `main`.
+# No build step is needed (plain HTML/CSS/JS), so this just publishes the
+# repository contents as-is — but package.json/tests/workflow files are
+# excluded from the published site since they're dev-only.
+#
+# One-time setup (in the GitHub repo, not in this file):
+#   Settings → Pages → Source → select "GitHub Actions"
+# After that, every push to main redeploys automatically — nothing to click.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you trigger a redeploy manually from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare site folder (drop dev-only files from the published output)
+        run: |
+          mkdir -p _site
+          rsync -av --exclude='.git' --exclude='.github' --exclude='node_modules' \
+            --exclude='tests' --exclude='package.json' --exclude='package-lock.json' \
+            --exclude='_site' ./ _site/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
