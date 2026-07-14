@@ -379,7 +379,56 @@ function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/* ============================== TEMPERATURE CHART ============================== */
+/* ============================== DASHBOARD LAYOUT CUSTOMIZATION ============================== */
+
+const SECTION_LABELS = {
+  runner: 'Для бегуна',
+  chart: 'График температуры',
+  radar: 'Радар осадков',
+  hourly: 'Почасовой прогноз',
+  daily: 'Прогноз на 10 дней',
+  weekly: 'Недельный тренд',
+  details: 'Подробности',
+};
+
+/**
+ * Reorders the section elements inside #content-sections to match `order`,
+ * and shows/hides them per `hiddenIds`. The hero card and footer are never
+ * part of `order` — the hero always stays first, the footer always last.
+ */
+export function applyLayout(order, hiddenIds) {
+  const container = $('content-sections');
+  order.forEach((id) => {
+    const el = container.querySelector(`[data-section-id="${id}"]`);
+    if (!el) return;
+    el.classList.toggle('hidden', hiddenIds.includes(id));
+    container.appendChild(el);
+  });
+  const footer = container.querySelector('.app-footer');
+  if (footer) container.appendChild(footer);
+}
+
+/** Renders the reorder/hide list inside the "Настроить экран" overlay. */
+export function renderLayoutList(order, hiddenIds, onMove, onToggleHidden) {
+  const list = $('layout-list');
+  list.innerHTML = order.map((id, i) => `
+    <li class="layout-item ${hiddenIds.includes(id) ? 'section-hidden' : ''}" data-id="${id}">
+      <button class="move-up-btn" aria-label="Выше" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="move-down-btn" aria-label="Ниже" ${i === order.length - 1 ? 'disabled' : ''}>▼</button>
+      <span class="layout-item-name">${SECTION_LABELS[id] || id}</span>
+      <button class="eye-btn ${hiddenIds.includes(id) ? 'is-hidden' : ''}" aria-label="Показать/скрыть">${hiddenIds.includes(id) ? '🚫' : '👁'}</button>
+    </li>
+  `).join('');
+
+  list.querySelectorAll('.layout-item').forEach((item) => {
+    const id = item.dataset.id;
+    item.querySelector('.move-up-btn').addEventListener('click', () => onMove(id, -1));
+    item.querySelector('.move-down-btn').addEventListener('click', () => onMove(id, 1));
+    item.querySelector('.eye-btn').addEventListener('click', () => onToggleHidden(id));
+  });
+}
+
+
 
 /**
  * Renders a lightweight inline-SVG line chart of temperature and "feels like"

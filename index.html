@@ -38,6 +38,9 @@
       <button id="search-btn" class="icon-btn" aria-label="Поиск города">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5L20.5 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
       </button>
+      <button id="layout-btn" class="icon-btn" aria-label="Настроить экран">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 6h18v2H3zm4 4h14v2H7zm-4 4h18v2H3zm4 4h14v2H7z"/></svg>
+      </button>
       <button id="refresh-btn" class="icon-btn" aria-label="Обновить">
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
       </button>
@@ -73,6 +76,17 @@
           <button class="profile-chip" id="units-btn">🌡️ <span id="units-value">°C</span></button>
           <button class="profile-chip" id="wind-unit-btn">💨 <span id="wind-unit-value">км/ч</span></button>
         </div>
+      </div>
+    </div>
+
+    <div id="layout-overlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <div class="search-row">
+          <h2 class="drawer-title" style="padding:0;">Настроить экран</h2>
+          <button id="layout-close" class="icon-btn" aria-label="Закрыть">✕</button>
+        </div>
+        <p class="trend-note" style="padding:4px 6px 10px;">Стрелками измени порядок блоков, значком глаза — скрой ненужные. Карточка «Сейчас» всегда сверху.</p>
+        <ul id="layout-list" class="layout-list"></ul>
       </div>
     </div>
 
@@ -116,7 +130,7 @@
       </section>
 
       <!-- ---------- RUNNER SECTION ---------- -->
-      <section class="runner-card glass" id="runner-card">
+      <section class="runner-card glass" id="runner-card" data-section-id="runner">
         <div class="runner-header">
           <h2>Для бегуна</h2>
           <div class="runner-badge" id="runner-badge">
@@ -158,13 +172,13 @@
       </section>
 
       <!-- ---------- TEMPERATURE CHART ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="chart">
         <h2 class="section-title">Температура, 24 часа</h2>
         <div class="chart-card glass" id="temp-chart"></div>
       </section>
 
       <!-- ---------- PRECIPITATION RADAR ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="radar">
         <h2 class="section-title">Радар осадков</h2>
         <div class="radar-card glass" id="radar-card">
           <canvas id="radar-canvas" width="300" height="300"></canvas>
@@ -176,26 +190,26 @@
       </section>
 
       <!-- ---------- HOURLY FORECAST ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="hourly">
         <h2 class="section-title">Почасовой прогноз</h2>
         <div class="hourly-scroll glass" id="hourly-scroll"></div>
       </section>
 
       <!-- ---------- 10-DAY FORECAST ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="daily">
         <h2 class="section-title">Прогноз на 10 дней</h2>
         <div class="daily-list glass" id="daily-list"></div>
       </section>
 
       <!-- ---------- WEEKLY RUNNING TREND ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="weekly">
         <h2 class="section-title">Недельный тренд для бега</h2>
         <div class="chart-card glass" id="weekly-trend"></div>
         <p class="trend-note">Оценка по дневным максимумам/минимумам — для планирования длительной пробежки заранее, менее точная, чем почасовая шкала на сегодня.</p>
       </section>
 
       <!-- ---------- DETAILS GRID ---------- -->
-      <section class="section-block">
+      <section class="section-block" data-section-id="details">
         <h2 class="section-title">Подробности</h2>
         <div class="details-grid" id="details-grid"></div>
       </section>

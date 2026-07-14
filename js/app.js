@@ -183,6 +183,7 @@ function renderAll() {
   const currentHourRow = runnerEngine.findCurrentHourRow(hourly);
 
   safeRender('theme', () => applyResolvedTheme(dailyToday));
+  safeRender('layout', () => ui.applyLayout(settings.sectionOrder, settings.hiddenSections));
   safeRender('hero', () => ui.renderHero(state.activeCity, current, dailyToday, settings));
   safeRender('chart', () => ui.renderTemperatureChart(hourly));
   safeRender('hourly', () => ui.renderHourly(hourly, settings));
@@ -237,6 +238,8 @@ function wireEvents() {
   $('search-close').addEventListener('click', closeSearch);
   $('menu-btn').addEventListener('click', openDrawer);
   $('drawer-add-btn').addEventListener('click', () => { closeDrawer(); openSearch(); });
+  $('layout-btn').addEventListener('click', openLayoutPanel);
+  $('layout-close').addEventListener('click', closeLayoutPanel);
   $('refresh-btn').addEventListener('click', manualRefresh);
   $('notify-btn').addEventListener('click', toggleNotifications);
   $('heat-profile-btn').addEventListener('click', () => cycleProfile('heatTolerance'));
@@ -261,6 +264,7 @@ function wireEvents() {
   // Tapping outside the panel closes the overlay.
   $('search-overlay').addEventListener('click', (e) => { if (e.target.id === 'search-overlay') closeSearch(); });
   $('drawer-overlay').addEventListener('click', (e) => { if (e.target.id === 'drawer-overlay') closeDrawer(); });
+  $('layout-overlay').addEventListener('click', (e) => { if (e.target.id === 'layout-overlay') closeLayoutPanel(); });
 
   // Periodically refresh in the background so data stays fresh while the app is open.
   setInterval(() => { if (state.activeCity && navigator.onLine) refreshWeather(state.activeCity); }, 15 * 60 * 1000);
@@ -284,6 +288,39 @@ function openSearch() {
 }
 function closeSearch() {
   $('search-overlay').classList.add('hidden');
+}
+
+function openLayoutPanel() {
+  const settings = storage.getSettings();
+  ui.renderLayoutList(settings.sectionOrder, settings.hiddenSections, moveSection, toggleSectionHidden);
+  $('layout-overlay').classList.remove('hidden');
+}
+function closeLayoutPanel() {
+  $('layout-overlay').classList.add('hidden');
+}
+
+function moveSection(id, direction) {
+  const settings = storage.getSettings();
+  const order = [...settings.sectionOrder];
+  const idx = order.indexOf(id);
+  const newIdx = idx + direction;
+  if (idx === -1 || newIdx < 0 || newIdx >= order.length) return;
+  [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+  const updated = storage.updateSettings({ sectionOrder: order });
+  haptic(6);
+  ui.applyLayout(updated.sectionOrder, updated.hiddenSections);
+  ui.renderLayoutList(updated.sectionOrder, updated.hiddenSections, moveSection, toggleSectionHidden);
+}
+
+function toggleSectionHidden(id) {
+  const settings = storage.getSettings();
+  const hidden = settings.hiddenSections.includes(id)
+    ? settings.hiddenSections.filter((h) => h !== id)
+    : [...settings.hiddenSections, id];
+  const updated = storage.updateSettings({ hiddenSections: hidden });
+  haptic(6);
+  ui.applyLayout(updated.sectionOrder, updated.hiddenSections);
+  ui.renderLayoutList(updated.sectionOrder, updated.hiddenSections, moveSection, toggleSectionHidden);
 }
 
 function openDrawer() {

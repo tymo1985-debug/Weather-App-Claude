@@ -15,6 +15,8 @@ const STORAGE_KEYS = {
   SETTINGS: 'weatherApp.settings',        // theme, units, etc.
 };
 
+const DEFAULT_SECTION_ORDER = ['runner', 'chart', 'radar', 'hourly', 'daily', 'weekly', 'details'];
+
 const DEFAULT_SETTINGS = {
   theme: 'auto',       // 'light' | 'dark' | 'auto'
   units: 'metric',     // 'metric' | 'imperial'
@@ -24,6 +26,8 @@ const DEFAULT_SETTINGS = {
     heatTolerance: 'average', // 'sensitive' | 'average' | 'adapted'
     coldTolerance: 'average', // 'sensitive' | 'average' | 'adapted'
   },
+  sectionOrder: DEFAULT_SECTION_ORDER.slice(),
+  hiddenSections: [],
 };
 
 const DB_NAME = 'weatherAppDB';
@@ -151,7 +155,12 @@ export const storage = {
 
   /** Reads persisted settings, merged over defaults so new fields get sane values. */
   getSettings() {
-    return { ...DEFAULT_SETTINGS, ...safeParse(localStorage.getItem(STORAGE_KEYS.SETTINGS), {}) };
+    const merged = { ...DEFAULT_SETTINGS, ...safeParse(localStorage.getItem(STORAGE_KEYS.SETTINGS), {}) };
+    const known = new Set(merged.sectionOrder);
+    for (const id of DEFAULT_SECTION_ORDER) {
+      if (!known.has(id)) merged.sectionOrder.push(id);
+    }
+    return merged;
   },
 
   /** Merges and persists a partial settings update. */
