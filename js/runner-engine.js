@@ -189,6 +189,8 @@ export function generateRecommendations(currentHourRow, todayHourlyRows, dailyTo
   else if (feelsLike >= 18) waterMl = 600;
   else if (feelsLike <= 0) waterMl = 300;
 
+  const paceAdjustment = estimatePaceAdjustment(feelsLike);
+
   return {
     score,
     feelsLike,
@@ -204,6 +206,7 @@ export function generateRecommendations(currentHourRow, todayHourlyRows, dailyTo
     overheatRisk,
     hypothermiaRisk,
     waterMl,
+    paceAdjustment,
     needSunProtection: uv >= 5,
     needWindbreaker: wind >= 22 || feelsLike < 8,
     needRaincoat: precipProb >= 55 || precip > 1,
@@ -246,6 +249,47 @@ export function checkDeteriorationWarning(hourlyRows, lookaheadHours = 6, profil
   return null;
 }
 
+/**
+ * Finds the most comfortable contiguous window in the next 24h, using a
+ * sliding average over `windowHours`. Returns null if nothing in the day
+ * clears a "worth going out for" bar.
+ * @param {Array} timeline output of buildComfortTimeline (24 entries)
+ * @param {number} windowHours size of the sliding window, default 2h
+ */
+export function findBestWindow(timeline, windowHours = 2) {
+  if (timeline.length < windowHours) return null;
+  let best = null;
+  for (let i = 0; i <= timeline.length - windowHours; i++) {
+    const slice = timeline.slice(i, i + windowHours);
+    const avg = slice.reduce((sum, s) => sum + s.score, 0) / slice.length;
+    if (!best || avg > best.avg) {
+      best = { avg, startTime: slice[0].time, endTime: slice[slice.length - 1].time };
+    }
+  }
+  if (!best || best.avg < 55) return null;
+  return best;
+}
+
+/**
+ * Rough pace-adjustment estimate for heat/cold, loosely following the
+ * common coaching rule of thumb (~3-4 sec/km slower per °C above ~15°C
+ * apparent temperature; a much smaller, capped adjustment for deep cold).
+ * This is a simplification, not a physiological model — it's meant to give
+ * a directional heads-up, not a precise target.
+ * @param {number} feelsLike apparent temperature in °C
+ */
+export function estimatePaceAdjustment(feelsLike) {
+  if (feelsLike > 15) {
+    const secPerKm = Math.round(Math.min(60, (feelsLike - 15) * 3.5));
+    return { secPerKm, note: secPerKm > 0 ? `+${secPerKm} сек/км из-за жары` : 'Без поправки' };
+  }
+  if (feelsLike < -5) {
+    const secPerKm = Math.round(Math.min(20, (-5 - feelsLike) * 1.2));
+    return { secPerKm, note: secPerKm > 0 ? `+${secPerKm} сек/км из-за холода` : 'Без поправки' };
+  }
+  return { secPerKm: 0, note: 'Без поправки — комфортная температура' };
+}
+
 export const runnerEngine = {
   scoreHour,
   levelForScore,
@@ -253,4 +297,6 @@ export const runnerEngine = {
   findCurrentHourRow,
   generateRecommendations,
   checkDeteriorationWarning,
+  findBestWindow,
+  estimatePaceAdjustment,
 };

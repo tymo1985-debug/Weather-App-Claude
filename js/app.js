@@ -10,6 +10,7 @@ import { storage } from './storage.js';
 import { weatherProvider } from './weather-api.js';
 import { runnerEngine } from './runner-engine.js';
 import { UNIT_LABELS } from './units.js';
+import { recordRunFeedback, suggestProfileAdjustment } from './calibration.js';
 import * as ui from './ui.js';
 
 const state = {
@@ -18,6 +19,8 @@ const state = {
   weather: null,     // normalized payload for the active city
   isOffline: false,
   hasRenderedOnce: false,
+  lastRecommendation: null, // populated each renderAll(), used by the share card and feedback buttons
+  radar: { meta: null, index: 0, playing: false, timerId: null },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -98,6 +101,7 @@ async function selectCity(city, { addIfMissing = false } = {}) {
   ui.renderCityTabs(state.favorites, city.id, (c) => selectCity(c));
   await renderFromCache(city); // show something instantly if we have it
   await refreshWeather(city);
+  loadRadar();
 }
 
 async function renderFromCache(city) {
@@ -191,10 +195,12 @@ function renderAll() {
     const timeline = runnerEngine.buildComfortTimeline(hourly, profile);
     const nowIndex = timeline.findIndex((seg) => seg.time === currentHourRow.time);
     ui.renderRunnerTimeline(timeline, Math.max(0, nowIndex));
+    ui.renderBestWindow(runnerEngine.findBestWindow(timeline));
   });
 
   safeRender('runner-recommendations', () => {
     const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday, profile);
+    state.lastRecommendation = recommendations;
     ui.renderRunnerRecommendations(recommendations);
   });
 
@@ -203,6 +209,8 @@ function renderAll() {
     ui.renderRunnerWarning(warning);
     maybeNotifyDeterioration(warning);
   });
+
+  safeRender('morning-digest', () => maybeSendMorningDigest());
 
   if (!state.hasRenderedOnce) {
     state.hasRenderedOnce = true;
@@ -235,6 +243,12 @@ function wireEvents() {
   $('units-btn').addEventListener('click', cycleTempUnit);
   $('wind-unit-btn').addEventListener('click', cycleWindUnit);
   $('use-location-btn').addEventListener('click', useDeviceLocation);
+  $('radar-play-btn').addEventListener('click', toggleRadarPlayback);
+  $('share-btn').addEventListener('click', shareCard);
+  $('feedback-buttons').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-feeling]');
+    if (btn) recordFeedback(btn.dataset.feeling);
+  });
 
   let searchDebounce;
   $('search-input').addEventListener('input', (e) => {
@@ -484,7 +498,134 @@ function wireSwipeBetweenCities() {
   });
 }
 
-/* ============================== SERVICE WORKER & BACKGROUND SYNC ============================== */
+/* ============================== PRECIPITATION RADAR ============================== */
+
+async function loadRadar() {
+  if (!state.activeCity) return;
+  stopRadarPlayback();
+  try {
+    const { fetchRadarFrames, drawRadarFrame, formatFrameTime } = await import('./radar.js');
+    const meta = await fetchRadarFrames();
+    state.radar.meta = meta;
+    state.radar.index = meta.frames.length - 1; // start on the most recent frame
+    const canvas = $('radar-canvas');
+    await drawRadarFrame(canvas, meta, state.radar.index, state.activeCity);
+    ui.renderRadarTimeLabel(formatFrameTime(meta, state.radar.index));
+  } catch (err) {
+    console.warn('Radar unavailable:', err);
+    ui.renderRadarTimeLabel('Радар недоступен');
+  }
+}
+
+function toggleRadarPlayback() {
+  if (state.radar.playing) {
+    stopRadarPlayback();
+    return;
+  }
+  if (!state.radar.meta) return;
+  state.radar.playing = true;
+  ui.setRadarPlayButtonState(true);
+  state.radar.timerId = setInterval(async () => {
+    const { frames } = state.radar.meta;
+    state.radar.index = (state.radar.index + 1) % frames.length;
+    const { drawRadarFrame, formatFrameTime } = await import('./radar.js');
+    await drawRadarFrame($('radar-canvas'), state.radar.meta, state.radar.index, state.activeCity);
+    ui.renderRadarTimeLabel(formatFrameTime(state.radar.meta, state.radar.index));
+  }, 500);
+}
+
+function stopRadarPlayback() {
+  if (state.radar.timerId) clearInterval(state.radar.timerId);
+  state.radar.timerId = null;
+  state.radar.playing = false;
+  ui.setRadarPlayButtonState(false);
+}
+
+/* ============================== SHARE CARD ============================== */
+
+async function shareCard() {
+  if (!state.weather || !state.activeCity || !state.lastRecommendation) return;
+  try {
+    const { drawShareCard, shareCanvas } = await import('./share.js');
+    const canvas = $('share-canvas');
+    drawShareCard(canvas, {
+      city: state.activeCity,
+      current: state.weather.current,
+      dailyToday: state.weather.daily[0],
+      recommendation: state.lastRecommendation,
+      settings: storage.getSettings(),
+    });
+    haptic(10);
+    await shareCanvas(canvas, `weather-${state.activeCity.name}.png`);
+  } catch (err) {
+    if (err?.name !== 'AbortError') { // user cancelling the native share sheet isn't an error
+      console.warn('Share failed:', err);
+      ui.showStatusBanner('Не удалось поделиться карточкой.', 'warn');
+    }
+  }
+}
+
+/* ============================== POST-RUN FEEDBACK & CALIBRATION ============================== */
+
+function recordFeedback(feeling) {
+  if (!state.lastRecommendation) return;
+  ui.markFeedbackSelected(feeling);
+  haptic(10);
+  recordRunFeedback(feeling, state.lastRecommendation.feelsLike);
+
+  const settings = storage.getSettings();
+  const suggestion = suggestProfileAdjustment(settings.runnerProfile);
+  if (suggestion) {
+    const runnerProfile = { ...settings.runnerProfile, [suggestion.kind]: suggestion.suggestedValue };
+    storage.updateSettings({ runnerProfile });
+    ui.showStatusBanner(`Профиль обновлён: ${suggestion.reason}.`, 'info');
+    setTimeout(ui.hideStatusBanner, 3500);
+    if (state.weather) renderAll();
+  }
+}
+
+/* ============================== MORNING DIGEST ============================== */
+
+/**
+ * Sends one local notification per day, in the morning window, summarizing
+ * the day's best running window and overall outlook. There's no push
+ * server behind this app, so it's checked opportunistically whenever the
+ * app renders (foreground refresh, periodic background sync wake-up, etc.)
+ * rather than fired at an exact scheduled time.
+ */
+async function maybeSendMorningDigest() {
+  const settings = storage.getSettings();
+  if (!settings.notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (!state.activeCity || !state.weather || !state.lastRecommendation) return;
+
+  const now = new Date();
+  const hour = now.getHours();
+  if (hour < 6 || hour > 9) return;
+
+  const todayKey = now.toISOString().slice(0, 10);
+  const lastDigestDate = localStorage.getItem('weatherApp.lastDigestDate');
+  if (lastDigestDate === todayKey) return;
+
+  const timeline = runnerEngine.buildComfortTimeline(state.weather.hourly, settings.runnerProfile);
+  const window = runnerEngine.findBestWindow(timeline);
+  const windowText = window
+    ? `Лучшее окно: ${new Date(window.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}–${new Date(window.endTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}.`
+    : 'Сегодня нет явно комфортного окна для бега.';
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification('Доброе утро ☀️', {
+      body: `${state.lastRecommendation.level.emoji} ${state.lastRecommendation.level.label}. ${windowText}`,
+      icon: 'icons/icon.svg',
+      tag: 'morning-digest',
+    });
+    localStorage.setItem('weatherApp.lastDigestDate', todayKey);
+  } catch (err) {
+    console.warn('Failed to show morning digest:', err);
+  }
+}
+
+
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;

@@ -12,7 +12,7 @@
  * cleaned up and clients pick up the new assets.
  */
 
-const CACHE_VERSION = 'weather-pwa-v3';
+const CACHE_VERSION = 'weather-pwa-v4';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -35,10 +35,13 @@ const APP_SHELL_FILES = [
   './js/astro.js',
   './js/icons.js',
   './js/units.js',
+  './js/calibration.js',
+  './js/radar.js',
+  './js/share.js',
   './icons/icon.svg',
 ];
 
-const API_HOSTS = ['api.open-meteo.com', 'air-quality-api.open-meteo.com', 'geocoding-api.open-meteo.com', 'api.bigdatacloud.net'];
+const API_HOSTS = ['api.open-meteo.com', 'air-quality-api.open-meteo.com', 'geocoding-api.open-meteo.com', 'api.bigdatacloud.net', 'api.rainviewer.com', 'tilecache.rainviewer.com'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

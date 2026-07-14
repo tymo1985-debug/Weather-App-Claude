@@ -107,3 +107,27 @@ export function getWeatherDescription(weatherCode) {
 export function getAnimationCategory(weatherCode) {
   return categorize(weatherCode);
 }
+
+/**
+ * Builds a small humanoid silhouette SVG where head/hands/torso/legs are
+ * highlighted (filled with the accent color) when the runner recommendations
+ * say that part needs protection — a quicker visual read than a text list.
+ * @param {{needHat:boolean, needGloves:boolean, needWindbreaker:boolean, needRaincoat:boolean, feelsLike:number}} rec
+ */
+export function getClothingSilhouetteSvg(rec) {
+  const on = (flag) => (flag ? '#FFFFFF' : 'rgba(255,255,255,0.28)');
+  const legsCovered = rec.feelsLike <= 12; // tights vs shorts, roughly matching clothingAdvice() thresholds
+  const torsoLong = rec.feelsLike <= 15;
+
+  return `<svg viewBox="0 0 40 64" xmlns="http://www.w3.org/2000/svg" class="clothing-silhouette">
+    <circle cx="20" cy="8" r="6" fill="${on(rec.needHat)}"/>
+    <rect x="10" y="16" width="20" height="${torsoLong ? 26 : 20}" rx="6" fill="${on(true)}"/>
+    <rect x="2" y="18" width="8" height="18" rx="4" fill="${on(rec.needWindbreaker)}"/>
+    <rect x="30" y="18" width="8" height="18" rx="4" fill="${on(rec.needWindbreaker)}"/>
+    <circle cx="5" cy="38" r="4" fill="${on(rec.needGloves)}"/>
+    <circle cx="35" cy="38" r="4" fill="${on(rec.needGloves)}"/>
+    <rect x="11" y="${torsoLong ? 42 : 36}" width="8" height="${legsCovered ? 22 : 16}" rx="4" fill="${on(legsCovered)}"/>
+    <rect x="21" y="${torsoLong ? 42 : 36}" width="8" height="${legsCovered ? 22 : 16}" rx="4" fill="${on(legsCovered)}"/>
+    ${rec.needRaincoat ? '<path d="M4 20 L36 20 L32 30 L8 30 Z" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="3 2"/>' : ''}
+  </svg>`;
+}

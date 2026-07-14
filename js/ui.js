@@ -7,7 +7,7 @@
  * the scoring/data logic can be unit-tested without a DOM.
  */
 
-import { getWeatherIconSvg, getWeatherDescription, getAnimationCategory } from './icons.js';
+import { getWeatherIconSvg, getWeatherDescription, getAnimationCategory, getClothingSilhouetteSvg } from './icons.js';
 import { getMoonPhase, formatDurationHM, formatTimeHM } from './astro.js';
 import { formatTemp, formatWind, UNIT_LABELS } from './units.js';
 
@@ -310,6 +310,7 @@ export function renderRunnerRecommendations(rec) {
   const rows = [
     ['Риск перегрева', capitalize(rec.overheatRisk)],
     ['Переохлаждение', rec.hypothermiaRisk ? 'Есть риск' : 'Не грозит'],
+    ['Поправка темпа', rec.paceAdjustment.note],
     ['Вода на пробежку', `${rec.waterMl} мл`],
     ['Солнцезащита', rec.needSunProtection ? 'Рекомендуется' : 'Не требуется'],
     ['Ветровка', rec.needWindbreaker ? 'Да' : 'Нет'],
@@ -324,7 +325,7 @@ export function renderRunnerRecommendations(rec) {
     </div>
   `).join('');
 
-  $('runner-clothing').innerHTML = `<span class="clothing-icon">👕</span><span>${rec.clothing}</span>`;
+  $('runner-clothing').innerHTML = `${getClothingSilhouetteSvg(rec)}<span>${rec.clothing}</span>`;
 
   if (rec.factors.length) {
     showStatusBanner('', 'noop'); // no-op placeholder kept for symmetry, hidden below if unused
@@ -341,6 +342,37 @@ export function renderRunnerWarning(warning) {
   }
   el.classList.remove('hidden');
   el.textContent = `⚠️ ${warning.message}`;
+}
+
+/** Shows the best comfort window for a run today, or hides the banner if none clears the bar. */
+export function renderBestWindow(window) {
+  const el = $('best-window');
+  if (!window) {
+    el.classList.add('hidden');
+    return;
+  }
+  const start = new Date(window.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const end = new Date(window.endTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  el.textContent = `🎯 Лучшее окно сегодня: ${start}–${end}`;
+  el.classList.remove('hidden');
+}
+
+export function renderRadarTimeLabel(text) {
+  $('radar-time-label').textContent = text;
+}
+
+export function setRadarPlayButtonState(playing) {
+  $('radar-play-btn').textContent = playing ? '⏸' : '▶';
+}
+
+/** Briefly highlights the tapped post-run feedback button for visual confirmation. */
+export function markFeedbackSelected(feeling) {
+  document.querySelectorAll('#feedback-buttons button').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.feeling === feeling);
+  });
+  setTimeout(() => {
+    document.querySelectorAll('#feedback-buttons button').forEach((btn) => btn.classList.remove('selected'));
+  }, 1500);
 }
 
 function capitalize(s) {
