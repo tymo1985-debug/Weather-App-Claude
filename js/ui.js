@@ -446,7 +446,39 @@ export function renderTemperatureChart(hourlyRows) {
   `;
 }
 
-/* ============================== RUNNER PROFILE CHIPS ============================== */
+/**
+ * Renders the 7-day comfort trend as a small inline-SVG bar chart, colored
+ * with the same comfort scale as the 24h ribbon, with temperature range
+ * labels so it doubles as a quick "which day to plan the long run on" view.
+ */
+export function renderWeeklyTrend(trend, settings = { units: 'metric' }) {
+  const container = $('weekly-trend');
+  if (!trend.length) { container.innerHTML = ''; return; }
+
+  const width = 320;
+  const height = 150;
+  const barGap = 8;
+  const barWidth = (width - barGap * (trend.length - 1)) / trend.length;
+  const chartTop = 30;
+  const chartBottom = height - 22;
+  const chartHeight = chartBottom - chartTop;
+
+  const bars = trend.map((day, i) => {
+    const x = i * (barWidth + barGap);
+    const barHeight = (day.score / 100) * chartHeight;
+    const y = chartBottom - barHeight;
+    const dayLabel = i === 0 ? 'Сегодня' : new Date(day.date).toLocaleDateString('ru-RU', { weekday: 'short' });
+    return `
+      <rect class="trend-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="6" fill="${segmentColor(day.score)}"></rect>
+      <text class="temp-chart-value" x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle">${formatTemp(day.tempMax, settings.units)}</text>
+      <text class="temp-chart-label" x="${x + barWidth / 2}" y="${height - 4}" text-anchor="middle">${dayLabel}</text>
+    `;
+  }).join('');
+
+  container.innerHTML = `<svg class="temp-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+}
+
+
 
 const TOLERANCE_LABELS = { sensitive: 'чувствителен', average: 'обычная', adapted: 'привык' };
 const TOLERANCE_CYCLE = ['average', 'adapted', 'sensitive'];

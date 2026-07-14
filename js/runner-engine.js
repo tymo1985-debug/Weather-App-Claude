@@ -290,6 +290,55 @@ export function estimatePaceAdjustment(feelsLike) {
   return { secPerKm: 0, note: 'Без поправки — комфортная температура' };
 }
 
+/**
+ * Estimates a running-comfort score per day for the next `days` days, using
+ * daily aggregate fields (max/min apparent temperature, max precipitation
+ * probability, max wind, max UV, daily weather code) rather than hour-by-hour
+ * data — the app only fetches 48h of hourly detail, so this is a coarser,
+ * "good enough to plan a long run around" estimate rather than the precise
+ * hour-by-hour scoring used for today's timeline.
+ * @param {Array} dailyRows normalized daily rows
+ * @param {object} [profile] runner's personal acclimatization
+ * @param {number} [days] how many days ahead to include, default 7
+ */
+export function buildWeeklyTrend(dailyRows, profile = DEFAULT_PROFILE, days = 7) {
+  const heat = HEAT_ADJUST[profile.heatTolerance] || HEAT_ADJUST.average;
+  const cold = COLD_ADJUST[profile.coldTolerance] || COLD_ADJUST.average;
+  const upperBound = 15 + heat.boundShift;
+  const lowerBound = 5 + cold.boundShift;
+
+  return dailyRows.slice(0, days).map((day) => {
+    let score = 100;
+    const hot = day.apparent_temperature_max;
+    const cold_ = day.apparent_temperature_min;
+
+    if (hot > upperBound) score -= Math.min(45, (hot - upperBound) * 2.6 * heat.multiplier);
+    if (cold_ < lowerBound) score -= Math.min(40, (lowerBound - cold_) * 2.4 * cold.multiplier);
+
+    const precipProb = day.precipitation_probability_max ?? 0;
+    if (precipProb > 60) score -= 20;
+    else if (precipProb > 30) score -= 8;
+
+    const wind = day.wind_speed_10m_max ?? 0;
+    if (wind > 40) score -= 12;
+    else if (wind > 25) score -= 5;
+
+    if ((day.uv_index_max ?? 0) >= 8) score -= 6;
+
+    if (THUNDER_CODES.has(day.weather_code)) score = Math.min(score, 25);
+    if (SNOW_CODES.has(day.weather_code) || ICE_CODES.has(day.weather_code)) score -= 15;
+
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    return {
+      date: day.time,
+      score,
+      level: levelForScore(score),
+      tempMax: day.temperature_2m_max,
+      tempMin: day.temperature_2m_min,
+    };
+  });
+}
+
 export const runnerEngine = {
   scoreHour,
   levelForScore,
@@ -299,4 +348,5 @@ export const runnerEngine = {
   checkDeteriorationWarning,
   findBestWindow,
   estimatePaceAdjustment,
+  buildWeeklyTrend,
 };

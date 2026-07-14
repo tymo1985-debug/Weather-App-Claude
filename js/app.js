@@ -187,6 +187,7 @@ function renderAll() {
   safeRender('chart', () => ui.renderTemperatureChart(hourly));
   safeRender('hourly', () => ui.renderHourly(hourly, settings));
   safeRender('daily', () => ui.renderDaily(daily, settings));
+  safeRender('weekly-trend', () => ui.renderWeeklyTrend(runnerEngine.buildWeeklyTrend(daily, profile), settings));
   safeRender('details', () => ui.renderDetailsGrid(current, dailyToday, currentHourRow, settings));
   safeRender('bg-animation', () => ui.startWeatherAnimation(current.weather_code));
   safeRender('profile-chips', () => ui.renderProfileChips(profile));

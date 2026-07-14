@@ -12,7 +12,7 @@
  * cleaned up and clients pick up the new assets.
  */
 
-const CACHE_VERSION = 'weather-pwa-v4';
+const CACHE_VERSION = 'weather-pwa-v5';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

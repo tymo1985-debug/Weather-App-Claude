@@ -15,6 +15,7 @@ import {
   findBestWindow,
   estimatePaceAdjustment,
   checkDeteriorationWarning,
+  buildWeeklyTrend,
 } from '../js/runner-engine.js';
 
 /** Builds a minimal hourly row, filling in comfortable defaults for anything unspecified. */
@@ -141,5 +142,35 @@ describe('checkDeteriorationWarning', () => {
   it('returns null when conditions stay flat', () => {
     const rows = [hour({ time: 't0' }), hour({ time: 't1' }), hour({ time: 't2' })];
     expect(checkDeteriorationWarning(rows, 6)).toBeNull();
+  });
+});
+
+describe('buildWeeklyTrend', () => {
+  const day = (overrides = {}) => ({
+    time: '2026-07-14',
+    apparent_temperature_max: 16,
+    apparent_temperature_min: 8,
+    temperature_2m_max: 18,
+    temperature_2m_min: 10,
+    precipitation_probability_max: 10,
+    wind_speed_10m_max: 10,
+    uv_index_max: 4,
+    weather_code: 1,
+    ...overrides,
+  });
+
+  it('scores a mild day higher than a scorching day', () => {
+    const trend = buildWeeklyTrend([day(), day({ apparent_temperature_max: 34, apparent_temperature_min: 22 })]);
+    expect(trend[0].score).toBeGreaterThan(trend[1].score);
+  });
+
+  it('scores a mild day higher than a rainy, windy day', () => {
+    const trend = buildWeeklyTrend([day(), day({ precipitation_probability_max: 80, wind_speed_10m_max: 45, weather_code: 65 })]);
+    expect(trend[0].score).toBeGreaterThan(trend[1].score);
+  });
+
+  it('caps the trend to the requested number of days', () => {
+    const trend = buildWeeklyTrend(Array.from({ length: 10 }, () => day()), undefined, 7);
+    expect(trend.length).toBe(7);
   });
 });
