@@ -109,3 +109,15 @@ h1, h2, h3, p { margin: 0; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------- Compact density mode ---------- */
+body.density-compact .hero-card,
+body.density-compact .runner-card { padding: 14px 16px 12px; }
+body.density-compact #hero-temp-value { font-size: 60px; }
+body.density-compact .main-content { gap: 12px; }
+body.density-compact .detail-tile { padding: 10px 12px; }
+body.density-compact .detail-value { font-size: 16px; }
+body.density-compact .daily-item { padding: 8px 0; }
+body.density-compact .hour-item { width: 46px; }
+body.density-compact .section-title { font-size: 13px; }
+body.density-compact .runner-timeline { height: 32px; }

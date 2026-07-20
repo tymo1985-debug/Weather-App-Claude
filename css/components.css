@@ -179,6 +179,41 @@
   margin-top: 6px;
 }
 
+.hero-nowcast {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.hero-climate-norm {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.hero-confidence {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  width: fit-content;
+}
+.hero-confidence.high { background: var(--chip-bg); color: var(--accent); }
+.hero-confidence.low { background: rgba(255, 145, 66, 0.18); color: var(--accent-warm); }
+
+/* ---------- MeteoAlarm official warnings ---------- */
+.meteoalarm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 75, 75, 0.16), rgba(255, 145, 66, 0.1));
+  border: 1px solid rgba(255, 75, 75, 0.25);
+}
+.meteoalarm-title { font-size: 13.5px; font-weight: 700; }
+.meteoalarm-item { font-size: 13px; line-height: 1.4; }
+.meteoalarm-item .meteoalarm-summary { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+
 /* ---------- Hourly forecast ---------- */
 .hourly-scroll {
   display: flex;

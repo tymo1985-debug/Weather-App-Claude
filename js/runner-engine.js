@@ -255,15 +255,25 @@ export function checkDeteriorationWarning(hourlyRows, lookaheadHours = 6, profil
  * clears a "worth going out for" bar.
  * @param {Array} timeline output of buildComfortTimeline (24 entries)
  * @param {number} windowHours size of the sliding window, default 2h
+ * @param {{sunrise?: string, sunset?: string}} [daylight] today's sunrise/sunset,
+ *   used to flag windows that fall outside daylight hours (visibility/safety)
  */
-export function findBestWindow(timeline, windowHours = 2) {
+export function findBestWindow(timeline, windowHours = 2, daylight = {}) {
   if (timeline.length < windowHours) return null;
+  const sunriseMs = daylight.sunrise ? new Date(daylight.sunrise).getTime() : null;
+  const sunsetMs = daylight.sunset ? new Date(daylight.sunset).getTime() : null;
+
   let best = null;
   for (let i = 0; i <= timeline.length - windowHours; i++) {
     const slice = timeline.slice(i, i + windowHours);
-    const avg = slice.reduce((sum, s) => sum + s.score, 0) / slice.length;
-    if (!best || avg > best.avg) {
-      best = { avg, startTime: slice[0].time, endTime: slice[slice.length - 1].time };
+    const rawAvg = slice.reduce((sum, s) => sum + s.score, 0) / slice.length;
+    const startMs = new Date(slice[0].time).getTime();
+    const isDark = sunriseMs != null && sunsetMs != null && (startMs < sunriseMs || startMs >= sunsetMs);
+    // Small penalty for darkness (reduced visibility/safety), not disqualifying —
+    // a well-lit, gear-appropriate dark run can still beat a mediocre daylight hour.
+    const adjustedAvg = isDark ? rawAvg - 8 : rawAvg;
+    if (!best || adjustedAvg > best.avg) {
+      best = { avg: adjustedAvg, startTime: slice[0].time, endTime: slice[slice.length - 1].time, isDark };
     }
   }
   if (!best || best.avg < 55) return null;
@@ -339,6 +349,33 @@ export function buildWeeklyTrend(dailyRows, profile = DEFAULT_PROFILE, days = 7)
   });
 }
 
+/**
+ * Looks at the 15-minute precipitation nowcast and reports whether rain is
+ * about to start or stop in the next ~2 hours — much more actionable than a
+ * probability percentage right before heading out.
+ * @param {Array<{time:string, precipitation:number}>} minutely15Rows
+ * @returns {{message:string} | null}
+ */
+export function estimatePrecipitationNowcast(minutely15Rows) {
+  if (!minutely15Rows || !minutely15Rows.length) return null;
+  const RAIN_THRESHOLD_MM = 0.1;
+  const isRaining = (row) => row.precipitation >= RAIN_THRESHOLD_MM;
+
+  const nowRaining = isRaining(minutely15Rows[0]);
+  for (let i = 1; i < minutely15Rows.length; i++) {
+    if (isRaining(minutely15Rows[i]) !== nowRaining) {
+      const minutes = i * 15;
+      return {
+        message: nowRaining
+          ? `Дождь должен закончиться примерно через ${minutes} мин`
+          : `Дождь может начаться примерно через ${minutes} мин`,
+      };
+    }
+  }
+  if (nowRaining) return { message: 'Дождь продолжится ближайшие пару часов' };
+  return null; // dry now and staying dry through the nowcast window — nothing worth flagging
+}
+
 export const runnerEngine = {
   scoreHour,
   levelForScore,
@@ -349,4 +386,5 @@ export const runnerEngine = {
   findBestWindow,
   estimatePaceAdjustment,
   buildWeeklyTrend,
+  estimatePrecipitationNowcast,
 };

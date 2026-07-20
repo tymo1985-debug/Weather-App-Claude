@@ -10,6 +10,7 @@ import { storage } from './storage.js';
 import { weatherProvider } from './weather-api.js';
 import { runnerEngine } from './runner-engine.js';
 import { UNIT_LABELS } from './units.js';
+import { LANGUAGES } from './i18n.js';
 import { recordRunFeedback, suggestProfileAdjustment } from './calibration.js';
 import * as ui from './ui.js';
 
@@ -25,6 +26,28 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const MANUAL_REFRESH_COOLDOWN_MS = 60 * 1000;
+let deferredInstallPrompt = null;
+
+// Chrome/Android fires this instead of showing its own banner once the PWA
+// install criteria are met; we stash the event and show our own button so
+// installing isn't left to chance/timing of the browser's default banner.
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('install-btn').classList.remove('hidden');
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  $('install-btn').classList.add('hidden');
+});
+
+async function promptInstall() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  $('install-btn').classList.add('hidden');
+}
 
 /** Fires a short vibration if the device supports it; silently no-ops otherwise. */
 function haptic(pattern = 12) {
@@ -43,6 +66,8 @@ async function init() {
   ui.applyTheme(settings.theme === 'auto' ? 'light' : settings.theme); // provisional, refined after first fetch
   ui.setNotificationButtonState(settings.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted');
   updateUnitButtons(settings);
+  applyDensity(settings.density);
+  ui.applyStaticTranslations(settings.language);
 
   state.favorites = storage.getFavorites();
 
@@ -102,6 +127,8 @@ async function selectCity(city, { addIfMissing = false } = {}) {
   await renderFromCache(city); // show something instantly if we have it
   await refreshWeather(city);
   loadRadar();
+  loadModelAgreement(city);
+  loadMeteoAlarm(city);
 }
 
 async function renderFromCache(city) {
@@ -185,6 +212,7 @@ function renderAll() {
   safeRender('theme', () => applyResolvedTheme(dailyToday));
   safeRender('layout', () => ui.applyLayout(settings.sectionOrder, settings.hiddenSections));
   safeRender('hero', () => ui.renderHero(state.activeCity, current, dailyToday, settings));
+  safeRender('nowcast', () => ui.renderNowcast(runnerEngine.estimatePrecipitationNowcast(state.weather.minutely15)));
   safeRender('chart', () => ui.renderTemperatureChart(hourly));
   safeRender('hourly', () => ui.renderHourly(hourly, settings));
   safeRender('daily', () => ui.renderDaily(daily, settings));
@@ -197,13 +225,13 @@ function renderAll() {
     const timeline = runnerEngine.buildComfortTimeline(hourly, profile);
     const nowIndex = timeline.findIndex((seg) => seg.time === currentHourRow.time);
     ui.renderRunnerTimeline(timeline, Math.max(0, nowIndex));
-    ui.renderBestWindow(runnerEngine.findBestWindow(timeline));
+    ui.renderBestWindow(runnerEngine.findBestWindow(timeline, 2, { sunrise: dailyToday?.sunrise, sunset: dailyToday?.sunset }));
   });
 
   safeRender('runner-recommendations', () => {
     const recommendations = runnerEngine.generateRecommendations(currentHourRow, hourly, dailyToday, profile);
     state.lastRecommendation = recommendations;
-    ui.renderRunnerRecommendations(recommendations);
+    ui.renderRunnerRecommendations(recommendations, settings.language);
   });
 
   safeRender('runner-warning', () => {
@@ -213,11 +241,14 @@ function renderAll() {
   });
 
   safeRender('morning-digest', () => maybeSendMorningDigest());
+  safeRender('planned-workout', () => { renderPlannedWorkoutNote(); maybeSendEveningPlanNotification(); });
 
   if (!state.hasRenderedOnce) {
     state.hasRenderedOnce = true;
     ui.hideSkeletons();
   }
+
+  safeRender('climate-norm', () => loadClimateNorm(dailyToday));
 }
 
 function applyResolvedTheme(dailyToday) {
@@ -238,17 +269,29 @@ function wireEvents() {
   $('search-close').addEventListener('click', closeSearch);
   $('menu-btn').addEventListener('click', openDrawer);
   $('drawer-add-btn').addEventListener('click', () => { closeDrawer(); openSearch(); });
+  $('install-btn').addEventListener('click', promptInstall);
   $('layout-btn').addEventListener('click', openLayoutPanel);
   $('layout-close').addEventListener('click', closeLayoutPanel);
+  $('density-btn').addEventListener('click', cycleDensity);
   $('refresh-btn').addEventListener('click', manualRefresh);
   $('notify-btn').addEventListener('click', toggleNotifications);
   $('heat-profile-btn').addEventListener('click', () => cycleProfile('heatTolerance'));
   $('cold-profile-btn').addEventListener('click', () => cycleProfile('coldTolerance'));
   $('units-btn').addEventListener('click', cycleTempUnit);
   $('wind-unit-btn').addEventListener('click', cycleWindUnit);
+  $('quiet-hours-btn').addEventListener('click', cycleQuietHours);
+  $('data-saver-btn').addEventListener('click', cycleDataSaver);
+  $('language-btn').addEventListener('click', cycleLanguage);
   $('use-location-btn').addEventListener('click', useDeviceLocation);
   $('radar-play-btn').addEventListener('click', toggleRadarPlayback);
   $('share-btn').addEventListener('click', shareCard);
+  $('plan-workout-btn').addEventListener('click', openPlanOverlay);
+  $('plan-close').addEventListener('click', closePlanOverlay);
+  $('plan-cancel-btn').addEventListener('click', cancelPlannedWorkout);
+  $('plan-type-grid').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-type]');
+    if (btn) savePlannedWorkout(btn.dataset.type, btn.dataset.label);
+  });
   $('feedback-buttons').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-feeling]');
     if (btn) recordFeedback(btn.dataset.feeling);
@@ -265,6 +308,7 @@ function wireEvents() {
   $('search-overlay').addEventListener('click', (e) => { if (e.target.id === 'search-overlay') closeSearch(); });
   $('drawer-overlay').addEventListener('click', (e) => { if (e.target.id === 'drawer-overlay') closeDrawer(); });
   $('layout-overlay').addEventListener('click', (e) => { if (e.target.id === 'layout-overlay') closeLayoutPanel(); });
+  $('plan-overlay').addEventListener('click', (e) => { if (e.target.id === 'plan-overlay') closePlanOverlay(); });
 
   // Periodically refresh in the background so data stays fresh while the app is open.
   setInterval(() => { if (state.activeCity && navigator.onLine) refreshWeather(state.activeCity); }, 15 * 60 * 1000);
@@ -288,6 +332,19 @@ function openSearch() {
 }
 function closeSearch() {
   $('search-overlay').classList.add('hidden');
+}
+
+function applyDensity(density) {
+  document.body.classList.toggle('density-compact', density === 'compact');
+  $('density-value').textContent = density === 'compact' ? 'Компактно' : 'Просторно';
+}
+
+function cycleDensity() {
+  const settings = storage.getSettings();
+  const next = settings.density === 'compact' ? 'comfortable' : 'compact';
+  const updated = storage.updateSettings({ density: next });
+  applyDensity(updated.density);
+  haptic(8);
 }
 
 function openLayoutPanel() {
@@ -398,6 +455,52 @@ function cycleProfile(kind) {
 function updateUnitButtons(settings) {
   $('units-value').textContent = UNIT_LABELS.units[settings.units];
   $('wind-unit-value').textContent = UNIT_LABELS.windUnit[settings.windUnit];
+  $('quiet-hours-value').textContent = settings.quietHours.enabled
+    ? `${String(settings.quietHours.start).padStart(2, '0')}:00–${String(settings.quietHours.end).padStart(2, '0')}:00`
+    : 'Выкл';
+  $('data-saver-value').textContent = settings.dataSaverRadar ? 'Радар: Wi-Fi' : 'Радар: всегда';
+}
+
+const QUIET_HOURS_PRESETS = [
+  { enabled: false, start: 22, end: 7 },
+  { enabled: true, start: 22, end: 7 },
+  { enabled: true, start: 23, end: 6 },
+];
+
+function cycleLanguage() {
+  const settings = storage.getSettings();
+  const next = LANGUAGES[(LANGUAGES.indexOf(settings.language) + 1) % LANGUAGES.length];
+  const updated = storage.updateSettings({ language: next });
+  ui.applyStaticTranslations(updated.language);
+  haptic(8);
+  if (state.weather) renderAll();
+}
+
+function cycleQuietHours() {
+  const settings = storage.getSettings();
+  const currentIdx = QUIET_HOURS_PRESETS.findIndex(
+    (p) => p.enabled === settings.quietHours.enabled && p.start === settings.quietHours.start && p.end === settings.quietHours.end
+  );
+  const next = QUIET_HOURS_PRESETS[(Math.max(0, currentIdx) + 1) % QUIET_HOURS_PRESETS.length];
+  const updated = storage.updateSettings({ quietHours: next });
+  updateUnitButtons(updated);
+  haptic(8);
+}
+
+function cycleDataSaver() {
+  const settings = storage.getSettings();
+  const updated = storage.updateSettings({ dataSaverRadar: !settings.dataSaverRadar });
+  updateUnitButtons(updated);
+  haptic(8);
+  if (state.activeCity) loadRadar(); // re-evaluate immediately with the new preference
+}
+
+/** True during the user's configured quiet hours (handles windows that wrap past midnight). */
+function isQuietHours(settings) {
+  if (!settings.quietHours.enabled) return false;
+  const hour = new Date().getHours();
+  const { start, end } = settings.quietHours;
+  return start > end ? (hour >= start || hour < end) : (hour >= start && hour < end);
 }
 
 function cycleTempUnit() {
@@ -450,6 +553,7 @@ async function maybeNotifyDeterioration(warning) {
   if (!warning || !state.activeCity) return;
   const settings = storage.getSettings();
   if (!settings.notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (isQuietHours(settings)) return;
 
   const cooldownMs = 60 * 60 * 1000;
   const lastNotified = storage.getLastNotifiedAt(state.activeCity.id);
@@ -536,11 +640,66 @@ function wireSwipeBetweenCities() {
   });
 }
 
-/* ============================== PRECIPITATION RADAR ============================== */
+async function loadModelAgreement(city) {
+  try {
+    const { checkModelAgreement } = await import('./ensemble.js');
+    const agreement = await checkModelAgreement(city.latitude, city.longitude);
+    ui.renderModelAgreement(agreement);
+  } catch (err) {
+    console.warn('Model agreement check unavailable:', err);
+    ui.renderModelAgreement(null);
+  }
+}
 
-async function loadRadar() {
+async function loadMeteoAlarm(city) {
+  try {
+    const { fetchMeteoAlarmWarnings } = await import('./meteoalarm.js');
+    const warnings = await fetchMeteoAlarmWarnings(city.country);
+    ui.renderMeteoAlarmWarnings(warnings);
+  } catch (err) {
+    console.warn('MeteoAlarm unavailable:', err);
+    ui.renderMeteoAlarmWarnings(null);
+  }
+}
+
+/* ============================== CLIMATE NORM ============================== */
+
+async function loadClimateNorm(dailyToday) {
+  if (!state.activeCity || !dailyToday) return;
+  const { climateNormCacheKey } = await import('./climate.js');
+  const mmdd = climateNormCacheKey();
+  const cached = storage.getClimateNorm(state.activeCity.id, mmdd);
+  if (cached) {
+    ui.renderClimateNorm(cached, dailyToday.temperature_2m_max, storage.getSettings());
+    return;
+  }
+  try {
+    const { fetchClimateNorm } = await import('./climate.js');
+    const norm = await fetchClimateNorm(state.activeCity.latitude, state.activeCity.longitude);
+    if (norm) {
+      storage.setClimateNorm(state.activeCity.id, mmdd, norm);
+      ui.renderClimateNorm(norm, dailyToday.temperature_2m_max, storage.getSettings());
+    }
+  } catch (err) {
+    console.warn('Climate norm unavailable:', err);
+  }
+}
+
+
+
+async function loadRadar(forceLoad = false) {
   if (!state.activeCity) return;
   stopRadarPlayback();
+
+  const settings = storage.getSettings();
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const onCellularOrSaveData = connection && (connection.saveData || connection.type === 'cellular');
+  if (!forceLoad && settings.dataSaverRadar && onCellularOrSaveData) {
+    ui.renderRadarTimeLabel('Пропущено (мобильный интернет) — тапните ▶');
+    state.radar.meta = null;
+    return;
+  }
+
   try {
     const { fetchRadarFrames, drawRadarFrame, formatFrameTime } = await import('./radar.js');
     const meta = await fetchRadarFrames();
@@ -560,7 +719,10 @@ function toggleRadarPlayback() {
     stopRadarPlayback();
     return;
   }
-  if (!state.radar.meta) return;
+  if (!state.radar.meta) {
+    loadRadar(true); // user tapped play explicitly — load even if data-saver skipped it
+    return;
+  }
   state.radar.playing = true;
   ui.setRadarPlayButtonState(true);
   state.radar.timerId = setInterval(async () => {
@@ -579,7 +741,111 @@ function stopRadarPlayback() {
   ui.setRadarPlayButtonState(false);
 }
 
-/* ============================== SHARE CARD ============================== */
+/* ============================== PLANNED WORKOUT ============================== */
+
+function tomorrowDateStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function openPlanOverlay() {
+  const plan = storage.getPlannedWorkout();
+  const isActivePlan = plan && plan.cityId === state.activeCity?.id && plan.forDate === tomorrowDateStr();
+  document.querySelectorAll('#plan-type-grid button').forEach((btn) => {
+    btn.classList.toggle('selected', isActivePlan && btn.dataset.type === plan.type);
+  });
+  $('plan-cancel-btn').classList.toggle('hidden', !isActivePlan);
+  $('plan-overlay').classList.remove('hidden');
+}
+function closePlanOverlay() {
+  $('plan-overlay').classList.add('hidden');
+}
+
+function savePlannedWorkout(type, label) {
+  if (!state.activeCity) return;
+  storage.setPlannedWorkout({
+    type, typeLabel: label,
+    cityId: state.activeCity.id,
+    cityName: state.activeCity.name,
+    forDate: tomorrowDateStr(),
+    notifiedAt: null,
+  });
+  haptic(10);
+  closePlanOverlay();
+  renderPlannedWorkoutNote();
+  ui.showStatusBanner(`Запланировано: ${label} на завтра в ${state.activeCity.name}.`, 'info');
+  setTimeout(ui.hideStatusBanner, 2500);
+}
+
+function cancelPlannedWorkout() {
+  storage.clearPlannedWorkout();
+  haptic(8);
+  closePlanOverlay();
+  renderPlannedWorkoutNote();
+}
+
+function renderPlannedWorkoutNote() {
+  const el = $('planned-workout-note');
+  const plan = storage.getPlannedWorkout();
+  const isActivePlan = plan && plan.cityId === state.activeCity?.id && plan.forDate === tomorrowDateStr();
+  if (!isActivePlan) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.textContent = `📋 Запланировано на завтра: ${plan.typeLabel}. Вечером пришлём уведомление.`;
+  el.classList.remove('hidden');
+}
+
+/**
+ * Checked opportunistically (like the morning digest) during the evening
+ * window. Analyzes tomorrow's hourly rows — which the app already has,
+ * since it fetches 48h of hourly detail — to suggest a start time and
+ * clothing for the planned workout.
+ */
+async function maybeSendEveningPlanNotification() {
+  const plan = storage.getPlannedWorkout();
+  if (!plan || !state.weather || !state.activeCity) return;
+  if (plan.cityId !== state.activeCity.id || plan.forDate !== tomorrowDateStr()) return;
+
+  const settings = storage.getSettings();
+  if (!settings.notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (isQuietHours(settings)) return;
+
+  const hour = new Date().getHours();
+  if (hour < 18 || hour > 21) return;
+  if (plan.notifiedAt && plan.notifiedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)) return;
+
+  const tomorrowRows = state.weather.hourly.filter((row) => row.time.slice(0, 10) === plan.forDate);
+  if (tomorrowRows.length < 2) return; // not enough of tomorrow in the 48h window yet
+
+  const dailyTomorrow = state.weather.daily.find((d) => d.time === plan.forDate);
+  const timeline = runnerEngine.buildComfortTimeline(tomorrowRows, settings.runnerProfile);
+  const bestWindow = runnerEngine.findBestWindow(timeline, 2, { sunrise: dailyTomorrow?.sunrise, sunset: dailyTomorrow?.sunset });
+
+  const representativeRow = bestWindow
+    ? tomorrowRows.find((row) => row.time === bestWindow.startTime) || tomorrowRows[0]
+    : tomorrowRows[Math.floor(tomorrowRows.length / 2)];
+  const rec = runnerEngine.generateRecommendations(representativeRow, tomorrowRows, dailyTomorrow, settings.runnerProfile);
+
+  const windowText = bestWindow
+    ? `Лучшее время старта: ${new Date(bestWindow.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}${bestWindow.isDark ? ' 🌙' : ''}.`
+    : 'Явно комфортного окна завтра не видно — выбери время сам по прогнозу.';
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification(`Завтра: ${plan.typeLabel}`, {
+      body: `${windowText} ${rec.clothing}`,
+      icon: 'icons/icon.svg',
+      tag: 'planned-workout',
+    });
+    storage.setPlannedWorkout({ ...plan, notifiedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('Failed to show planned-workout notification:', err);
+  }
+}
+
+
 
 async function shareCard() {
   if (!state.weather || !state.activeCity || !state.lastRecommendation) return;

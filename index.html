@@ -38,6 +38,9 @@
       <button id="search-btn" class="icon-btn" aria-label="Поиск города">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5L20.5 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
       </button>
+      <button id="install-btn" class="icon-btn hidden" aria-label="Установить приложение">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 3v10.17l3.59-3.58L17 11l-5 5-5-5 1.41-1.41L11 13.17V3h1zM5 19h14v2H5z"/></svg>
+      </button>
       <button id="layout-btn" class="icon-btn" aria-label="Настроить экран">
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 6h18v2H3zm4 4h14v2H7zm-4 4h18v2H3zm4 4h14v2H7z"/></svg>
       </button>
@@ -67,26 +70,55 @@
     <!-- =================== CITY DRAWER (favorites list) =================== -->
     <div id="drawer-overlay" class="overlay hidden">
       <div class="overlay-panel drawer-panel">
-        <h2 class="drawer-title">Мои города</h2>
+        <h2 class="drawer-title" id="title-my-cities">Мои города</h2>
         <ul id="favorites-list" class="favorites-list"></ul>
-        <button id="drawer-add-btn" class="location-btn">＋ Добавить город</button>
+        <button id="drawer-add-btn" class="location-btn">＋ <span id="add-city-label">Добавить город</span></button>
 
-        <h2 class="drawer-title">Единицы измерения</h2>
+        <h2 class="drawer-title" id="title-units">Единицы измерения</h2>
         <div class="runner-profile-row">
           <button class="profile-chip" id="units-btn">🌡️ <span id="units-value">°C</span></button>
           <button class="profile-chip" id="wind-unit-btn">💨 <span id="wind-unit-value">км/ч</span></button>
         </div>
+
+        <h2 class="drawer-title" id="title-notifications-traffic">Уведомления и трафик</h2>
+        <div class="runner-profile-row">
+          <button class="profile-chip" id="quiet-hours-btn">🌙 <span id="quiet-hours-value">22:00–7:00</span></button>
+          <button class="profile-chip" id="data-saver-btn">📶 <span id="data-saver-value">Радар: Wi-Fi</span></button>
+        </div>
+
+        <h2 class="drawer-title" id="title-language">Язык интерфейса</h2>
+        <button class="profile-chip" id="language-btn" style="width:100%;">🌐 <span id="language-value">Русский</span></button>
       </div>
     </div>
 
     <div id="layout-overlay" class="overlay hidden">
       <div class="overlay-panel">
         <div class="search-row">
-          <h2 class="drawer-title" style="padding:0;">Настроить экран</h2>
+          <h2 class="drawer-title" id="title-customize-screen" style="padding:0;">Настроить экран</h2>
           <button id="layout-close" class="icon-btn" aria-label="Закрыть">✕</button>
         </div>
         <p class="trend-note" style="padding:4px 6px 10px;">Стрелками измени порядок блоков, значком глаза — скрой ненужные. Карточка «Сейчас» всегда сверху.</p>
+        <div class="runner-profile-row" style="margin-bottom:10px;">
+          <button class="profile-chip" id="density-btn">📐 <span id="density-value">Просторно</span></button>
+        </div>
         <ul id="layout-list" class="layout-list"></ul>
+      </div>
+    </div>
+
+    <div id="plan-overlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <div class="search-row">
+          <h2 class="drawer-title" style="padding:0;">Тренировка на завтра</h2>
+          <button id="plan-close" class="icon-btn" aria-label="Закрыть">✕</button>
+        </div>
+        <p class="trend-note" style="padding:4px 6px 10px;">Вечером пришлём уведомление с лучшим временем старта и одеждой под завтрашнюю погоду.</p>
+        <div class="plan-type-grid" id="plan-type-grid">
+          <button class="pace-chip" data-type="easy" data-label="Лёгкий бег">🏃 Лёгкий</button>
+          <button class="pace-chip" data-type="long" data-label="Длительная">🛣️ Длительная</button>
+          <button class="pace-chip" data-type="interval" data-label="Интервалы">⏱️ Интервалы</button>
+          <button class="pace-chip" data-type="tempo" data-label="Темповая">⚡ Темповая</button>
+        </div>
+        <button id="plan-cancel-btn" class="location-btn hidden">Отменить план</button>
       </div>
     </div>
 
@@ -127,12 +159,18 @@
           <span>↓ <span id="hero-temp-min">--°</span></span>
           <span>↑ <span id="hero-temp-max">--°</span></span>
         </div>
+        <div id="hero-nowcast" class="hero-nowcast hidden"></div>
+        <div id="hero-climate-norm" class="hero-climate-norm hidden"></div>
+        <div id="hero-confidence" class="hero-confidence hidden"></div>
       </section>
+
+      <!-- ---------- OFFICIAL WEATHER WARNINGS (MeteoAlarm) ---------- -->
+      <div id="meteoalarm-section" class="meteoalarm-section hidden"></div>
 
       <!-- ---------- RUNNER SECTION ---------- -->
       <section class="runner-card glass" id="runner-card" data-section-id="runner">
         <div class="runner-header">
-          <h2>Для бегуна</h2>
+          <h2 id="title-runner">Для бегуна</h2>
           <div class="runner-badge" id="runner-badge">
             <span id="runner-emoji">🟢</span>
             <span id="runner-label">Загрузка…</span>
@@ -169,17 +207,19 @@
         </div>
 
         <button id="share-btn" class="location-btn share-btn">📤 Поделиться карточкой</button>
+        <button id="plan-workout-btn" class="location-btn">📋 Запланировать тренировку на завтра</button>
+        <div id="planned-workout-note" class="best-window hidden"></div>
       </section>
 
       <!-- ---------- TEMPERATURE CHART ---------- -->
       <section class="section-block" data-section-id="chart">
-        <h2 class="section-title">Температура, 24 часа</h2>
+        <h2 class="section-title" id="title-chart">Температура, 24 часа</h2>
         <div class="chart-card glass" id="temp-chart"></div>
       </section>
 
       <!-- ---------- PRECIPITATION RADAR ---------- -->
       <section class="section-block" data-section-id="radar">
-        <h2 class="section-title">Радар осадков</h2>
+        <h2 class="section-title" id="title-radar">Радар осадков</h2>
         <div class="radar-card glass" id="radar-card">
           <canvas id="radar-canvas" width="300" height="300"></canvas>
           <div class="radar-controls">
@@ -191,30 +231,30 @@
 
       <!-- ---------- HOURLY FORECAST ---------- -->
       <section class="section-block" data-section-id="hourly">
-        <h2 class="section-title">Почасовой прогноз</h2>
+        <h2 class="section-title" id="title-hourly">Почасовой прогноз</h2>
         <div class="hourly-scroll glass" id="hourly-scroll"></div>
       </section>
 
       <!-- ---------- 10-DAY FORECAST ---------- -->
       <section class="section-block" data-section-id="daily">
-        <h2 class="section-title">Прогноз на 10 дней</h2>
+        <h2 class="section-title" id="title-daily">Прогноз на 10 дней</h2>
         <div class="daily-list glass" id="daily-list"></div>
       </section>
 
       <!-- ---------- WEEKLY RUNNING TREND ---------- -->
       <section class="section-block" data-section-id="weekly">
-        <h2 class="section-title">Недельный тренд для бега</h2>
+        <h2 class="section-title" id="title-weekly">Недельный тренд для бега</h2>
         <div class="chart-card glass" id="weekly-trend"></div>
-        <p class="trend-note">Оценка по дневным максимумам/минимумам — для планирования длительной пробежки заранее, менее точная, чем почасовая шкала на сегодня.</p>
+        <p class="trend-note" id="weekly-trend-note">Оценка по дневным максимумам/минимумам — для планирования длительной пробежки заранее, менее точная, чем почасовая шкала на сегодня.</p>
       </section>
 
       <!-- ---------- DETAILS GRID ---------- -->
       <section class="section-block" data-section-id="details">
-        <h2 class="section-title">Подробности</h2>
+        <h2 class="section-title" id="title-details">Подробности</h2>
         <div class="details-grid" id="details-grid"></div>
       </section>
 
-      <footer class="app-footer">Данные: Open-Meteo · Обновляется автоматически</footer>
+      <footer class="app-footer" id="app-footer-text">Данные: Open-Meteo · Обновляется автоматически</footer>
       </div>
     </main>
   </div>

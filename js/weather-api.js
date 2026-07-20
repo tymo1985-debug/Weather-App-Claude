@@ -90,9 +90,11 @@ class OpenMeteoProvider {
     forecastUrl.searchParams.set('current', CURRENT_FIELDS.join(','));
     forecastUrl.searchParams.set('hourly', HOURLY_FIELDS.join(','));
     forecastUrl.searchParams.set('daily', DAILY_FIELDS.join(','));
+    forecastUrl.searchParams.set('minutely_15', 'precipitation');
     forecastUrl.searchParams.set('timezone', 'auto');
     forecastUrl.searchParams.set('forecast_days', '10');
     forecastUrl.searchParams.set('forecast_hours', '48');
+    forecastUrl.searchParams.set('forecast_minutely_15', '8'); // next 2 hours in 15-min steps
 
     const [forecastRes, airRes] = await Promise.allSettled([
       fetchWithRetry(forecastUrl.toString(), { retries: 2, baseDelayMs: 600 }),
@@ -123,6 +125,7 @@ class OpenMeteoProvider {
   #normalize(forecast, air) {
     const hourly = transpose(forecast.hourly);
     const daily = transpose(forecast.daily);
+    const minutely15 = transpose(forecast.minutely_15);
     const airHourlyByTime = new Map(
       air ? transpose(air.hourly).map((row) => [row.time, row]) : []
     );
@@ -146,6 +149,7 @@ class OpenMeteoProvider {
       },
       hourly,
       daily,
+      minutely15,
     };
   }
 }

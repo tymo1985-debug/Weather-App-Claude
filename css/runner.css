@@ -89,6 +89,15 @@
 .pace-chip.ok { background: var(--chip-bg); color: var(--accent); }
 .pace-chip .pace-icon { font-size: 16px; }
 
+.plan-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.plan-type-grid .pace-chip { padding: 14px 6px; font-size: 13px; cursor: pointer; }
+.plan-type-grid .pace-chip.selected { background: var(--hero-gradient); color: #fff; }
+
 /* --- Recommendation detail grid (hydration, UV, wind, risk of overheating…) --- */
 .runner-details-grid {
   display: grid;

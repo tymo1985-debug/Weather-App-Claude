@@ -7,11 +7,38 @@
  * the scoring/data logic can be unit-tested without a DOM.
  */
 
-import { getWeatherIconSvg, getWeatherDescription, getAnimationCategory, getClothingSilhouetteSvg } from './icons.js';
+import { getWeatherIconSvg, getAnimationCategory, getClothingSilhouetteSvg } from './icons.js';
 import { getMoonPhase, formatDurationHM, formatTimeHM } from './astro.js';
 import { formatTemp, formatWind, UNIT_LABELS } from './units.js';
+import { t, translatedWeatherDescription, translatedLevelLabel, LANGUAGE_NAMES } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
+
+/** Applies the selected language to every static (non-data-driven) label in the UI. */
+export function applyStaticTranslations(lang) {
+  const map = {
+    'title-runner': 'forRunner',
+    'title-chart': 'sectionChart',
+    'title-radar': 'sectionRadar',
+    'title-hourly': 'sectionHourly',
+    'title-daily': 'sectionDaily',
+    'title-weekly': 'sectionWeekly',
+    'title-details': 'sectionDetails',
+    'weekly-trend-note': 'weeklyTrendNote',
+    'app-footer-text': 'footer',
+    'title-my-cities': 'myCities',
+    'add-city-label': 'addCity',
+    'title-units': 'units',
+    'title-notifications-traffic': 'notificationsAndTraffic',
+    'title-customize-screen': 'customizeScreen',
+    'title-language': 'interfaceLanguage',
+  };
+  for (const [id, key] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key, lang);
+  }
+  $('language-value').textContent = LANGUAGE_NAMES[lang];
+}
 
 /* ============================== THEME ============================== */
 
@@ -145,17 +172,71 @@ export function renderSearchResults(results, onSelect) {
 
 /* ============================== HERO CARD ============================== */
 
-export function renderHero(city, current, dailyToday, settings = { units: 'metric' }) {
+export function renderHero(city, current, dailyToday, settings = { units: 'metric', language: 'ru' }) {
   $('hero-city-name').textContent = city.name;
-  $('hero-updated').textContent = `Обновлено в ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+  $('hero-updated').textContent = `${t('updated', settings.language)} ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
   $('hero-icon').innerHTML = getWeatherIconSvg(current.weather_code, current.is_day === 1);
   $('hero-temp-value').textContent = formatTemp(current.temperature_2m, settings.units);
-  $('hero-description').textContent = getWeatherDescription(current.weather_code);
-  $('hero-feels-like').textContent = `Ощущается как ${formatTemp(current.apparent_temperature, settings.units)}`;
+  $('hero-description').textContent = translatedWeatherDescription(current.weather_code, settings.language);
+  $('hero-feels-like').textContent = `${t('feelsLike', settings.language)} ${formatTemp(current.apparent_temperature, settings.units)}`;
   if (dailyToday) {
     $('hero-temp-min').textContent = formatTemp(dailyToday.temperature_2m_min, settings.units);
     $('hero-temp-max').textContent = formatTemp(dailyToday.temperature_2m_max, settings.units);
   }
+}
+
+export function renderNowcast(nowcast) {
+  const el = $('hero-nowcast');
+  if (!nowcast) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.textContent = `🌧️ ${nowcast.message}`;
+  el.classList.remove('hidden');
+}
+
+export function renderClimateNorm(norm, todayTempMax, settings = { units: 'metric' }) {
+  const el = $('hero-climate-norm');
+  if (!norm) {
+    el.classList.add('hidden');
+    return;
+  }
+  const diff = Math.round(todayTempMax - norm.avgHigh);
+  const diffText = diff === 0 ? 'как обычно' : diff > 0 ? `на ${diff}° теплее нормы` : `на ${Math.abs(diff)}° холоднее нормы`;
+  el.textContent = `Норма на этот день: ${formatTemp(norm.avgHigh, settings.units)} — сегодня ${diffText}`;
+  el.classList.remove('hidden');
+}
+
+export function renderModelAgreement(agreement) {
+  const el = $('hero-confidence');
+  if (!agreement) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden', 'high', 'low');
+  el.classList.add(agreement.agreement);
+  el.textContent = agreement.agreement === 'high'
+    ? '✓ Прогноз надёжный (модели согласны)'
+    : `⚠ Модели расходятся на ${agreement.spread}° — прогноз менее уверенный`;
+}
+
+export function renderMeteoAlarmWarnings(warnings) {
+  const el = $('meteoalarm-section');
+  if (!warnings || !warnings.length) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <span class="meteoalarm-title">⚠️ Официальные предупреждения (MeteoAlarm)</span>
+    ${warnings.map((w) => `
+      <div class="meteoalarm-item">
+        ${w.emoji} ${w.title}
+        ${w.summary ? `<span class="meteoalarm-summary">${w.summary}</span>` : ''}
+      </div>
+    `).join('')}
+  `;
+  el.classList.remove('hidden');
 }
 
 /* ============================== HOURLY ============================== */
@@ -294,9 +375,9 @@ const PACE_LABELS = [
   ['recovery', '🌿', 'Восстановление'],
 ];
 
-export function renderRunnerRecommendations(rec) {
+export function renderRunnerRecommendations(rec, lang = 'ru') {
   $('runner-emoji').textContent = rec.level.emoji;
-  $('runner-label').textContent = rec.level.label;
+  $('runner-label').textContent = translatedLevelLabel(rec.level.key, lang);
 
   const paceGrid = $('runner-pace-grid');
   paceGrid.innerHTML = PACE_LABELS.map(([key, icon, label]) => `
@@ -353,7 +434,8 @@ export function renderBestWindow(window) {
   }
   const start = new Date(window.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const end = new Date(window.endTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  el.textContent = `🎯 Лучшее окно сегодня: ${start}–${end}`;
+  const darkNote = window.isDark ? ' 🌙 потребуется фонарик/светоотражатели' : '';
+  el.textContent = `🎯 Лучшее окно сегодня: ${start}–${end}${darkNote}`;
   el.classList.remove('hidden');
 }
 

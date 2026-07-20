@@ -28,6 +28,10 @@ const DEFAULT_SETTINGS = {
   },
   sectionOrder: DEFAULT_SECTION_ORDER.slice(),
   hiddenSections: [],
+  quietHours: { enabled: true, start: 22, end: 7 },
+  dataSaverRadar: true, // skip loading radar tiles on cellular / Save-Data mode
+  density: 'comfortable', // 'comfortable' | 'compact'
+  language: 'ru', // 'ru' | 'uk' | 'de' | 'en' — see js/i18n.js for coverage scope
 };
 
 const DB_NAME = 'weatherAppDB';
@@ -184,6 +188,29 @@ export const storage = {
   },
   setLastManualRefreshAt(timeMs) {
     sessionStorage.setItem('weatherApp.lastManualRefresh', String(timeMs));
+  },
+
+  /** Cached climate-norm baseline for a city + calendar day (see js/climate.js). Valid ~45 days. */
+  getClimateNorm(cityId, mmdd) {
+    const record = safeParse(localStorage.getItem(`weatherApp.climateNorm.${cityId}.${mmdd}`), null);
+    if (!record) return null;
+    const ageMs = Date.now() - record.cachedAt;
+    if (ageMs > 45 * 24 * 60 * 60 * 1000) return null;
+    return record.data;
+  },
+  setClimateNorm(cityId, mmdd, data) {
+    localStorage.setItem(`weatherApp.climateNorm.${cityId}.${mmdd}`, JSON.stringify({ data, cachedAt: Date.now() }));
+  },
+
+  /** A single planned workout for "tomorrow" (only one at a time, kept simple). */
+  getPlannedWorkout() {
+    return safeParse(localStorage.getItem('weatherApp.plannedWorkout'), null);
+  },
+  setPlannedWorkout(workout) {
+    localStorage.setItem('weatherApp.plannedWorkout', JSON.stringify(workout));
+  },
+  clearPlannedWorkout() {
+    localStorage.removeItem('weatherApp.plannedWorkout');
   },
 };
 
